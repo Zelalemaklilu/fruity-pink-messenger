@@ -202,7 +202,11 @@ const Wallet = () => {
         <h3 className="font-medium text-foreground mb-3">Recent Transactions</h3>
         <div className="space-y-2">
           {mockTransactions.map((transaction) => (
-            <Card key={transaction.id} className="p-4">
+            <Card 
+              key={transaction.id} 
+              className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth"
+              onClick={() => navigate(`/transaction-detail/${transaction.id}`)}
+            >
               <div className="flex items-center space-x-3">
                 <div className="p-2 rounded-lg bg-muted">
                   {getTransactionIcon(transaction.type)}

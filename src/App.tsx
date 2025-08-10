@@ -22,6 +22,7 @@ import SendMoney from "./pages/SendMoney";
 import RequestMoney from "./pages/RequestMoney";
 import TransactionHistory from "./pages/TransactionHistory";
 import TransactionReceipt from "./pages/TransactionReceipt";
+import TransactionDetail from "./pages/TransactionDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -139,6 +140,9 @@ const AppRoutes = () => {
       } />
       <Route path="/transaction-receipt" element={
         isAuthenticated ? <TransactionReceipt /> : <Navigate to="/" replace />
+      } />
+      <Route path="/transaction-detail/:transactionId" element={
+        isAuthenticated ? <TransactionDetail /> : <Navigate to="/" replace />
       } />
       <Route path="*" element={<NotFound />} />
     </Routes>
