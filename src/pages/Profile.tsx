@@ -1,11 +1,54 @@
-import { ArrowLeft, Phone, MessageSquare, UserX, Flag, MoreVertical } from "lucide-react";
+import { ArrowLeft, Phone, MessageSquare, UserX, Flag, MoreVertical, Images } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 const Profile = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleStartChat = () => {
+    navigate("/chat/alex-johnson");
+  };
+
+  const handleCall = () => {
+    toast({
+      title: "Calling Alex Johnson",
+      description: "Starting voice call...",
+    });
+  };
+
+  const handleViewMedia = () => {
+    toast({
+      title: "Shared Media",
+      description: "Opening media gallery...",
+    });
+  };
+
+  const handleBlockUser = () => {
+    toast({
+      title: "Block User",
+      description: "Are you sure you want to block Alex Johnson?",
+      variant: "destructive",
+    });
+  };
+
+  const handleReportUser = () => {
+    toast({
+      title: "Report User",
+      description: "Report submitted successfully",
+      variant: "destructive",
+    });
+  };
+
+  const handleMoreOptions = () => {
+    toast({
+      title: "More Options",
+      description: "Additional options coming soon...",
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -22,7 +65,7 @@ const Profile = () => {
             </Button>
             <h1 className="text-lg font-semibold">Profile</h1>
           </div>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={handleMoreOptions}>
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
@@ -56,7 +99,7 @@ const Profile = () => {
         <div className="grid grid-cols-2 gap-3">
           <Button 
             className="h-12 bg-gradient-primary hover:opacity-90 transition-smooth rounded-xl font-semibold"
-            onClick={() => navigate("/chat")}
+            onClick={handleStartChat}
           >
             <MessageSquare className="h-5 w-5 mr-2" />
             Start Chat
@@ -64,7 +107,7 @@ const Profile = () => {
           <Button 
             variant="outline" 
             className="h-12 rounded-xl font-semibold border-2 hover:bg-accent/10"
-            onClick={() => {/* Handle call */}}
+            onClick={handleCall}
           >
             <Phone className="h-5 w-5 mr-2" />
             Call
@@ -108,7 +151,9 @@ const Profile = () => {
           <Button 
             variant="ghost" 
             className="w-full text-primary hover:bg-primary/10 font-medium"
+            onClick={handleViewMedia}
           >
+            <Images className="h-4 w-4 mr-2" />
             View all media
           </Button>
         </Card>
@@ -119,6 +164,7 @@ const Profile = () => {
             <Button 
               variant="ghost" 
               className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 h-12"
+              onClick={handleBlockUser}
             >
               <UserX className="h-4 w-4 mr-3" />
               Block User
@@ -126,6 +172,7 @@ const Profile = () => {
             <Button 
               variant="ghost" 
               className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 h-12"
+              onClick={handleReportUser}
             >
               <Flag className="h-4 w-4 mr-3" />
               Report User
