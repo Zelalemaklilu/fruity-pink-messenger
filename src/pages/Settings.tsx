@@ -12,6 +12,45 @@ const Settings = () => {
     navigate('/');
   };
 
+  const handleMenuClick = (label: string) => {
+    switch(label) {
+      case "My Profile":
+        navigate('/profile');
+        break;
+      case "Wallet":
+        // For now, show a toast or alert
+        alert("Wallet feature coming soon!");
+        break;
+      case "New Group":
+        alert("New Group feature coming soon!");
+        break;
+      case "Contacts":
+        alert("Contacts feature coming soon!");
+        break;
+      case "Calls":
+        alert("Calls feature coming soon!");
+        break;
+      case "Saved Messages":
+        alert("Saved Messages feature coming soon!");
+        break;
+      case "Settings":
+        // Already on settings page
+        break;
+      case "Invite Friends":
+        alert("Invite Friends feature coming soon!");
+        break;
+      case "Zeshopp Features":
+        alert("Zeshopp Features coming soon!");
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleAddAccount = () => {
+    alert("Add another account feature coming soon!");
+  };
+
   const menuItems = [
     { icon: User, label: "My Profile", color: "text-primary" },
     { icon: Wallet, label: "Wallet", color: "text-green-500" },
@@ -54,7 +93,11 @@ const Settings = () => {
               <p className="text-sm text-muted-foreground">+251 9XX XXX XXX</p>
             </div>
           </div>
-          <Button variant="ghost" className="w-full mt-4 text-primary hover:text-primary/80">
+          <Button 
+            variant="ghost" 
+            className="w-full mt-4 text-primary hover:text-primary/80"
+            onClick={handleAddAccount}
+          >
             Add another account
           </Button>
         </Card>
@@ -66,6 +109,7 @@ const Settings = () => {
           <Card 
             key={index}
             className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth"
+            onClick={() => handleMenuClick(item.label)}
           >
             <div className="flex items-center space-x-4">
               <div className={`p-2 rounded-lg bg-muted ${item.color}`}>
