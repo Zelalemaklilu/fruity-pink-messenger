@@ -153,7 +153,11 @@ const TransactionHistory = () => {
       {/* Transactions List */}
       <div className="p-4 space-y-3">
         {getFilteredTransactions().map((transaction) => (
-          <Card key={transaction.id} className="p-4 hover:bg-muted/50 transition-smooth">
+          <Card 
+            key={transaction.id} 
+            className="p-4 hover:bg-muted/50 transition-smooth cursor-pointer"
+            onClick={() => navigate(`/transaction-detail/${transaction.id}`)}
+          >
             <div className="flex items-center space-x-3">
               <div className="p-2 rounded-lg bg-muted">
                 {getTransactionIcon(transaction.type)}

@@ -61,7 +61,28 @@ const mockTransactions: { [key: string]: Transaction } = {
     recipient: "John Smith",
     note: "Coffee payment",
     transactionId: "TXN1705842600004"
-  }
+  },
+  "5": {
+    id: "5",
+    type: "received",
+    amount: 300.00,
+    description: "From Emma Davis",
+    timestamp: "2 days ago, 5:45 PM",
+    status: "completed",
+    recipient: "Emma Davis",
+    note: "Shared dinner cost",
+    transactionId: "TXN1705842600005"
+  },
+  "6": {
+    id: "6",
+    type: "sent",
+    amount: 200.00,
+    description: "To Michael Brown",
+    timestamp: "3 days ago, 11:20 AM",
+    status: "failed",
+    recipient: "Michael Brown",
+    note: "Taxi fare",
+    transactionId: "TXN1705842600006"
 };
 
 const TransactionDetail = () => {
