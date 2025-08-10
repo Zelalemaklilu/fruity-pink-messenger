@@ -39,6 +39,7 @@ const OTP = () => {
 
     // For demo purposes, accept 123456 as correct code
     if (otpCode === "123456") {
+      localStorage.setItem('authToken', 'verified');
       navigate("/chats");
     } else {
       setError("Invalid verification code. Please try again.");

@@ -7,6 +7,11 @@ import { useNavigate } from "react-router-dom";
 const Settings = () => {
   const navigate = useNavigate();
 
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    navigate('/');
+  };
+
   const menuItems = [
     { icon: User, label: "My Profile", color: "text-primary" },
     { icon: Wallet, label: "Wallet", color: "text-green-500" },
@@ -78,13 +83,7 @@ const Settings = () => {
           <Button 
             variant="ghost" 
             className="w-full justify-start text-destructive hover:text-destructive"
-            onClick={() => {
-              // Show logout confirmation
-              const confirmed = window.confirm("Are you sure you want to log out?");
-              if (confirmed) {
-                navigate("/");
-              }
-            }}
+            onClick={handleLogout}
           >
             <LogOut className="h-5 w-5 mr-3" />
             Log Out
