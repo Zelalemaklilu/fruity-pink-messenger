@@ -83,6 +83,7 @@ const mockTransactions: { [key: string]: Transaction } = {
     recipient: "Michael Brown",
     note: "Taxi fare",
     transactionId: "TXN1705842600006"
+  }
 };
 
 const TransactionDetail = () => {
