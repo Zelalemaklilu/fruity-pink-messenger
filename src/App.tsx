@@ -11,6 +11,9 @@ import Chats from "./pages/Chats";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import Contacts from "./pages/Contacts";
+import Calls from "./pages/Calls";
+import SavedMessages from "./pages/SavedMessages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -95,6 +98,15 @@ const AppRoutes = () => {
       } />
       <Route path="/settings" element={
         isAuthenticated ? <Settings /> : <Navigate to="/" replace />
+      } />
+      <Route path="/contacts" element={
+        isAuthenticated ? <Contacts /> : <Navigate to="/" replace />
+      } />
+      <Route path="/calls" element={
+        isAuthenticated ? <Calls /> : <Navigate to="/" replace />
+      } />
+      <Route path="/saved-messages" element={
+        isAuthenticated ? <SavedMessages /> : <Navigate to="/" replace />
       } />
       <Route path="*" element={<NotFound />} />
     </Routes>

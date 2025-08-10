@@ -18,29 +18,32 @@ const Settings = () => {
         navigate('/profile');
         break;
       case "Wallet":
-        // For now, show a toast or alert
-        alert("Wallet feature coming soon!");
+        navigate('/wallet');
         break;
       case "New Group":
-        alert("New Group feature coming soon!");
+        navigate('/new-group');
         break;
       case "Contacts":
-        alert("Contacts feature coming soon!");
+        navigate('/contacts');
         break;
       case "Calls":
-        alert("Calls feature coming soon!");
+        navigate('/calls');
         break;
       case "Saved Messages":
-        alert("Saved Messages feature coming soon!");
+        navigate('/saved-messages');
         break;
       case "Settings":
         // Already on settings page
         break;
       case "Invite Friends":
-        alert("Invite Friends feature coming soon!");
+        navigator.share?.({
+          title: 'Join me on Zeshopp Chat',
+          text: 'Fast, simple, and secure messaging app',
+          url: window.location.origin
+        }) || alert('Share: ' + window.location.origin);
         break;
       case "Zeshopp Features":
-        alert("Zeshopp Features coming soon!");
+        navigate('/features');
         break;
       default:
         break;
@@ -48,7 +51,7 @@ const Settings = () => {
   };
 
   const handleAddAccount = () => {
-    alert("Add another account feature coming soon!");
+    navigate('/add-account');
   };
 
   const menuItems = [
