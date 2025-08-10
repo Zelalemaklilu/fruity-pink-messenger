@@ -54,6 +54,22 @@ const Wallet = () => {
   const navigate = useNavigate();
   const balance = 1250.75;
 
+  const handleAddMoney = () => {
+    navigate('/add-money');
+  };
+
+  const handleSendMoney = () => {
+    navigate('/send-money');
+  };
+
+  const handleRequestMoney = () => {
+    navigate('/request-money');
+  };
+
+  const handleViewHistory = () => {
+    navigate('/transaction-history');
+  };
+
   const getTransactionIcon = (type: string) => {
     switch(type) {
       case "sent":
@@ -126,6 +142,7 @@ const Wallet = () => {
             <Button 
               variant="secondary" 
               className="flex-1 bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/20"
+              onClick={handleAddMoney}
             >
               <Plus className="h-4 w-4 mr-2" />
               Top Up
@@ -133,6 +150,7 @@ const Wallet = () => {
             <Button 
               variant="secondary"
               className="flex-1 bg-primary-foreground/10 text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/20"
+              onClick={handleSendMoney}
             >
               <ArrowUpRight className="h-4 w-4 mr-2" />
               Send
@@ -144,19 +162,35 @@ const Wallet = () => {
       {/* Quick Actions */}
       <div className="px-4 mb-6">
         <div className="grid grid-cols-4 gap-3">
-          <Button variant="ghost" className="flex-col h-auto py-4">
+          <Button 
+            variant="ghost" 
+            className="flex-col h-auto py-4"
+            onClick={handleAddMoney}
+          >
             <Plus className="h-6 w-6 mb-2" />
             <span className="text-xs">Add Money</span>
           </Button>
-          <Button variant="ghost" className="flex-col h-auto py-4">
+          <Button 
+            variant="ghost" 
+            className="flex-col h-auto py-4"
+            onClick={handleSendMoney}
+          >
             <ArrowUpRight className="h-6 w-6 mb-2" />
             <span className="text-xs">Send</span>
           </Button>
-          <Button variant="ghost" className="flex-col h-auto py-4">
+          <Button 
+            variant="ghost" 
+            className="flex-col h-auto py-4"
+            onClick={handleRequestMoney}
+          >
             <ArrowDownLeft className="h-6 w-6 mb-2" />
             <span className="text-xs">Request</span>
           </Button>
-          <Button variant="ghost" className="flex-col h-auto py-4">
+          <Button 
+            variant="ghost" 
+            className="flex-col h-auto py-4"
+            onClick={handleViewHistory}
+          >
             <WalletIcon className="h-6 w-6 mb-2" />
             <span className="text-xs">History</span>
           </Button>

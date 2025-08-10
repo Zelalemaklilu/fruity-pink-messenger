@@ -17,6 +17,10 @@ import SavedMessages from "./pages/SavedMessages";
 import NewGroup from "./pages/NewGroup";
 import Wallet from "./pages/Wallet";
 import Features from "./pages/Features";
+import AddMoney from "./pages/AddMoney";
+import SendMoney from "./pages/SendMoney";
+import RequestMoney from "./pages/RequestMoney";
+import TransactionHistory from "./pages/TransactionHistory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -119,6 +123,18 @@ const AppRoutes = () => {
       } />
       <Route path="/features" element={
         isAuthenticated ? <Features /> : <Navigate to="/" replace />
+      } />
+      <Route path="/add-money" element={
+        isAuthenticated ? <AddMoney /> : <Navigate to="/" replace />
+      } />
+      <Route path="/send-money" element={
+        isAuthenticated ? <SendMoney /> : <Navigate to="/" replace />
+      } />
+      <Route path="/request-money" element={
+        isAuthenticated ? <RequestMoney /> : <Navigate to="/" replace />
+      } />
+      <Route path="/transaction-history" element={
+        isAuthenticated ? <TransactionHistory /> : <Navigate to="/" replace />
       } />
       <Route path="*" element={<NotFound />} />
     </Routes>
