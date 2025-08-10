@@ -63,16 +63,31 @@ const Chats = () => {
     navigate(`/chat/${chatId}`);
   };
 
+  const handleProfileClick = () => {
+    navigate('/profile');
+  };
+
+  const handleMenuClick = () => {
+    navigate('/settings');
+  };
+
+  const handleNewChatClick = () => {
+    // For now, navigate to a new chat with a demo contact
+    navigate('/chat/new');
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
         <div className="flex items-center space-x-4">
-          <ChatAvatar 
-            name="You" 
-            size="md"
-            status="online"
-          />
+          <div onClick={handleProfileClick} className="cursor-pointer">
+            <ChatAvatar 
+              name="You" 
+              size="md"
+              status="online"
+            />
+          </div>
           <div className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -84,7 +99,7 @@ const Chats = () => {
               />
             </div>
           </div>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={handleMenuClick}>
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
@@ -136,6 +151,7 @@ const Chats = () => {
       <div className="fixed bottom-6 right-6">
         <Button
           size="icon"
+          onClick={handleNewChatClick}
           className="h-14 w-14 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
           <Plus className="h-6 w-6" />
