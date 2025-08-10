@@ -23,12 +23,26 @@ const AppRoutes = () => {
     // Check if user is authenticated
     const checkAuth = () => {
       const authToken = localStorage.getItem('authToken');
+      console.log('Checking auth token:', authToken);
       setIsAuthenticated(!!authToken);
       setIsLoading(false);
     };
 
     checkAuth();
+
+    // Listen for storage changes
+    const handleStorageChange = () => {
+      checkAuth();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
+
+  console.log('App state - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated);
 
   if (isLoading) {
     return (
