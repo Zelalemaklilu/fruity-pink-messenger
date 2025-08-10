@@ -52,8 +52,16 @@ const RequestMoney = () => {
 
   const handleRequestMoney = () => {
     if (amount && selectedContact && parseFloat(amount) > 0) {
-      alert(`Requesting ${amount} ETB from ${selectedContact.name}`);
-      navigate('/wallet');
+      const transactionData = {
+        type: "request-money" as const,
+        amount: amount,
+        recipient: selectedContact.name,
+        transactionId: `TXN${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        status: "pending" as const
+      };
+      
+      navigate('/transaction-receipt', { state: transactionData });
     }
   };
 

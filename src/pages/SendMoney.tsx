@@ -52,8 +52,16 @@ const SendMoney = () => {
 
   const handleSendMoney = () => {
     if (amount && selectedContact && parseFloat(amount) > 0) {
-      alert(`Sending ${amount} ETB to ${selectedContact.name}`);
-      navigate('/wallet');
+      const transactionData = {
+        type: "send-money" as const,
+        amount: amount,
+        recipient: selectedContact.name,
+        transactionId: `TXN${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        status: "completed" as const
+      };
+      
+      navigate('/transaction-receipt', { state: transactionData });
     }
   };
 

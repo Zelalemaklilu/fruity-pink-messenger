@@ -21,8 +21,16 @@ const AddMoney = () => {
 
   const handleAddMoney = () => {
     if (amount && parseFloat(amount) > 0) {
-      alert(`Adding ${amount} ETB to your wallet via ${methods.find(m => m.id === selectedMethod)?.name}`);
-      navigate('/wallet');
+      const transactionData = {
+        type: "add-money" as const,
+        amount: amount,
+        method: methods.find(m => m.id === selectedMethod)?.name || "Unknown",
+        transactionId: `TXN${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        status: "completed" as const
+      };
+      
+      navigate('/transaction-receipt', { state: transactionData });
     }
   };
 
