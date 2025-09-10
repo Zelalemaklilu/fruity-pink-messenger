@@ -15,6 +15,8 @@ import Contacts from "./pages/Contacts";
 import Calls from "./pages/Calls";
 import SavedMessages from "./pages/SavedMessages";
 import NewGroup from "./pages/NewGroup";
+import NewMessage from "./pages/NewMessage";
+import NewContact from "./pages/NewContact";
 import Wallet from "./pages/Wallet";
 import Features from "./pages/Features";
 import AddMoney from "./pages/AddMoney";
@@ -119,6 +121,12 @@ const AppRoutes = () => {
       } />
       <Route path="/new-group" element={
         isAuthenticated ? <NewGroup /> : <Navigate to="/" replace />
+      } />
+      <Route path="/new-message" element={
+        isAuthenticated ? <NewMessage /> : <Navigate to="/" replace />
+      } />
+      <Route path="/new-contact" element={
+        isAuthenticated ? <NewContact /> : <Navigate to="/" replace />
       } />
       <Route path="/wallet" element={
         isAuthenticated ? <Wallet /> : <Navigate to="/" replace />

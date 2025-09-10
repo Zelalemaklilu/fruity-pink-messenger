@@ -72,8 +72,7 @@ const Chats = () => {
   };
 
   const handleNewChatClick = () => {
-    // For now, navigate to a new chat with a demo contact
-    navigate('/chat/new');
+    navigate('/new-message');
   };
 
   return (
