@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
+import { transactionStore } from "@/lib/transactionStore";
 
 interface Contact {
   id: string;
@@ -51,18 +52,32 @@ const RequestMoney = () => {
   const quickAmounts = [50, 100, 250, 500, 1000, 2000];
 
   const handleRequestMoney = () => {
-    if (amount && selectedContact && parseFloat(amount) > 0) {
-      const transactionData = {
-        type: "request-money" as const,
-        amount: amount,
-        recipient: selectedContact.name,
-        transactionId: `TXN${Date.now()}`,
-        timestamp: new Date().toLocaleString(),
-        status: "pending" as const
-      };
-      
-      navigate('/transaction-receipt', { state: transactionData });
-    }
+    if (!amount || !selectedContact || parseFloat(amount) <= 0) return;
+
+    // Create and add the transaction
+    const transaction = transactionStore.addTransaction({
+      type: "request",
+      amount: parseFloat(amount),
+      description: reason || `Request from ${selectedContact.name}`,
+      status: "pending",
+      recipient: selectedContact.name,
+      note: reason
+    });
+
+    // Navigate to receipt with transaction data
+    navigate('/transaction-receipt', { 
+      state: { 
+        transaction: {
+          type: 'request_money',
+          amount: parseFloat(amount),
+          recipient: selectedContact.name,
+          transactionId: transaction.transactionId,
+          timestamp: transaction.timestamp,
+          status: 'pending',
+          reason: reason
+        }
+      } 
+    });
   };
 
   return (

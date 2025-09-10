@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
+import { transactionStore } from "@/lib/transactionStore";
 
 const AddMoney = () => {
   const [amount, setAmount] = useState("");
@@ -20,18 +21,29 @@ const AddMoney = () => {
   const quickAmounts = [100, 250, 500, 1000, 2000, 5000];
 
   const handleAddMoney = () => {
-    if (amount && parseFloat(amount) > 0) {
-      const transactionData = {
-        type: "add-money" as const,
-        amount: amount,
-        method: methods.find(m => m.id === selectedMethod)?.name || "Unknown",
-        transactionId: `TXN${Date.now()}`,
-        timestamp: new Date().toLocaleString(),
-        status: "completed" as const
-      };
-      
-      navigate('/transaction-receipt', { state: transactionData });
-    }
+    if (!amount || parseFloat(amount) <= 0) return;
+
+    // Create and add the transaction
+    const transaction = transactionStore.addTransaction({
+      type: "add_money",
+      amount: parseFloat(amount),
+      description: `Added money via ${methods.find(m => m.id === selectedMethod)?.name || "Unknown"}`,
+      status: "completed"
+    });
+
+    // Navigate to receipt with transaction data
+    navigate('/transaction-receipt', { 
+      state: { 
+        transaction: {
+          type: 'add_money',
+          amount: parseFloat(amount),
+          method: methods.find(m => m.id === selectedMethod)?.name || "Unknown",
+          transactionId: transaction.transactionId,
+          timestamp: transaction.timestamp,
+          status: 'completed'
+        }
+      } 
+    });
   };
 
   return (

@@ -3,94 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate, useParams } from "react-router-dom";
+import { transactionStore, type Transaction } from "@/lib/transactionStore";
 import { QRCodeSVG } from "qrcode.react";
 
-interface Transaction {
-  id: string;
-  type: "sent" | "received" | "topup";
-  amount: number;
-  description: string;
-  timestamp: string;
-  status: "completed" | "pending" | "failed";
-  recipient?: string;
-  method?: string;
-  note?: string;
-  transactionId: string;
-}
-
-const mockTransactions: { [key: string]: Transaction } = {
-  "1": {
-    id: "1",
-    type: "received",
-    amount: 250.00,
-    description: "From Alex Johnson",
-    timestamp: "Today, 2:30 PM",
-    status: "completed",
-    recipient: "Alex Johnson",
-    note: "Payment for lunch",
-    transactionId: "TXN1705842600001"
-  },
-  "2": {
-    id: "2",
-    type: "sent",
-    amount: 150.00,
-    description: "To Sarah Williams",
-    timestamp: "Today, 1:15 PM", 
-    status: "completed",
-    recipient: "Sarah Williams",
-    note: "Movie tickets",
-    transactionId: "TXN1705842600002"
-  },
-  "3": {
-    id: "3",
-    type: "topup",
-    amount: 500.00,
-    description: "Bank Transfer",
-    timestamp: "Yesterday, 6:20 PM",
-    status: "completed",
-    method: "Commercial Bank of Ethiopia",
-    transactionId: "TXN1705842600003"
-  },
-  "4": {
-    id: "4",
-    type: "sent",
-    amount: 75.50,
-    description: "To John Smith",
-    timestamp: "Yesterday, 3:10 PM",
-    status: "pending",
-    recipient: "John Smith",
-    note: "Coffee payment",
-    transactionId: "TXN1705842600004"
-  },
-  "5": {
-    id: "5",
-    type: "received",
-    amount: 300.00,
-    description: "From Emma Davis",
-    timestamp: "2 days ago, 5:45 PM",
-    status: "completed",
-    recipient: "Emma Davis",
-    note: "Shared dinner cost",
-    transactionId: "TXN1705842600005"
-  },
-  "6": {
-    id: "6",
-    type: "sent",
-    amount: 200.00,
-    description: "To Michael Brown",
-    timestamp: "3 days ago, 11:20 AM",
-    status: "failed",
-    recipient: "Michael Brown",
-    note: "Taxi fare",
-    transactionId: "TXN1705842600006"
-  }
-};
-
 const TransactionDetail = () => {
-  const navigate = useNavigate();
   const { transactionId } = useParams();
+  const navigate = useNavigate();
   
-  const transaction = transactionId ? mockTransactions[transactionId] : null;
+  // Get transaction from store
+  const transaction = transactionId ? transactionStore.getTransaction(transactionId) : undefined;
 
   if (!transaction) {
     navigate('/wallet');
@@ -98,64 +19,78 @@ const TransactionDetail = () => {
   }
 
   const getTransactionIcon = (type: string) => {
-    switch(type) {
+    switch (type) {
       case "sent":
-        return <ArrowUpRight className="h-6 w-6 text-destructive" />;
+        return <ArrowUpRight className="h-5 w-5" />;
       case "received":
-        return <ArrowDownLeft className="h-6 w-6 text-green-500" />;
-      case "topup":
-        return <Plus className="h-6 w-6 text-primary" />;
+        return <ArrowDownLeft className="h-5 w-5" />;
+      case "add_money":
+        return <Plus className="h-5 w-5" />;
+      case "request":
+        return <Receipt className="h-5 w-5" />;
       default:
-        return null;
+        return <ArrowUpRight className="h-5 w-5" />;
     }
   };
 
   const getTransactionTitle = () => {
-    switch(transaction.type) {
+    switch (transaction.type) {
       case "sent":
         return "Money Sent";
       case "received":
         return "Money Received";
-      case "topup":
+      case "add_money":
         return "Money Added";
+      case "request":
+        return "Money Requested";
       default:
         return "Transaction";
     }
   };
 
   const getStatusColor = (status: string) => {
-    switch(status) {
+    switch (status) {
       case "completed":
-        return "bg-green-500/10 text-green-700 dark:text-green-400";
+        return "bg-status-online text-white";
       case "pending":
-        return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
+        return "bg-status-away text-white";
       case "failed":
-        return "bg-destructive/10 text-destructive";
+        return "bg-status-offline text-white";
       default:
         return "bg-muted text-muted-foreground";
     }
   };
 
+  const handleShare = async () => {
+    const shareData = {
+      title: `Transaction ${transaction.transactionId}`,
+      text: `${getTransactionTitle()}: ${transaction.amount} ETB`,
+      url: window.location.href
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Error sharing:', err);
+        alert('Transaction details copied to share!');
+      }
+    } else {
+      alert('Transaction details copied to share!');
+    }
+  };
+
   const qrData = JSON.stringify({
     transactionId: transaction.transactionId,
-    type: transaction.type,
     amount: transaction.amount,
-    timestamp: transaction.timestamp,
-    app: "Zeshopp Chat"
+    type: transaction.type,
+    timestamp: transaction.timestamp
   });
-
-  const handleShare = () => {
-    const shareText = `Transaction: ${transaction.description}\nAmount: ${transaction.amount.toFixed(2)} ETB\nDate: ${transaction.timestamp}\nStatus: ${transaction.status}`;
-    navigator.share?.({
-      title: "Zeshopp Transaction Details",
-      text: shareText
-    }) || alert("Transaction details copied to clipboard!");
-  };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
+      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button 
@@ -175,117 +110,99 @@ const TransactionDetail = () => {
 
       {/* Transaction Summary */}
       <div className="p-4">
-        <Card className="p-6">
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-              {getTransactionIcon(transaction.type)}
-            </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">
-              {getTransactionTitle()}
-            </h2>
-            <p className="text-3xl font-bold mb-2">
-              <span className={
-                transaction.type === "received" || transaction.type === "topup" 
-                  ? "text-green-600 dark:text-green-400" 
-                  : "text-foreground"
-              }>
-                {transaction.type === "received" || transaction.type === "topup" ? "+" : "-"}
-                {transaction.amount.toFixed(2)} ETB
-              </span>
-            </p>
-            <Badge className={getStatusColor(transaction.status)}>
-              {transaction.status === "completed" ? "Completed" : 
-               transaction.status === "pending" ? "Pending" : "Failed"}
-            </Badge>
+        <Card className="p-6 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-primary flex items-center justify-center text-primary-foreground">
+            {getTransactionIcon(transaction.type)}
           </div>
+          
+          <h2 className="text-2xl font-bold text-foreground mb-2">
+            {transaction.amount.toFixed(2)} ETB
+          </h2>
+          
+          <p className="text-muted-foreground mb-4">
+            {getTransactionTitle()}
+          </p>
+          
+          <Badge className={`${getStatusColor(transaction.status)} px-3 py-1`}>
+            {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+          </Badge>
         </Card>
       </div>
 
       {/* Transaction Details */}
-      <div className="px-4 mb-6">
-        <Card className="p-6">
-          <h3 className="font-medium text-foreground mb-4">Details</h3>
-          
-          <div className="space-y-4">
-            <div className="flex justify-between items-start">
+      <div className="px-4 space-y-4">
+        <Card className="p-5">
+          <h3 className="font-semibold text-foreground mb-4">Transaction Info</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Transaction ID</span>
-              <span className="font-mono text-sm text-right">{transaction.transactionId}</span>
+              <span className="text-foreground font-medium">{transaction.transactionId}</span>
             </div>
-            
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Description</span>
-              <span className="font-medium text-right">{transaction.description}</span>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-muted-foreground">Amount</span>
+              <span className="text-foreground font-medium">{transaction.amount.toFixed(2)} ETB</span>
             </div>
-            
-            {transaction.recipient && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  {transaction.type === "sent" ? "Sent to" : "Received from"}
-                </span>
-                <span className="font-medium text-right">{transaction.recipient}</span>
-              </div>
-            )}
-            
-            {transaction.method && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Payment Method</span>
-                <span className="font-medium text-right">{transaction.method}</span>
-              </div>
-            )}
-            
-            {transaction.note && (
-              <div className="flex justify-between items-start">
-                <span className="text-muted-foreground">Note</span>
-                <span className="font-medium text-right max-w-[200px]">{transaction.note}</span>
-              </div>
-            )}
-            
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Date & Time</span>
-              <span className="font-medium text-right">{transaction.timestamp}</span>
+              <span className="text-foreground font-medium">{transaction.timestamp}</span>
             </div>
-            
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Status</span>
-              <Badge className={getStatusColor(transaction.status)}>
-                {transaction.status === "completed" ? "Completed" : 
-                 transaction.status === "pending" ? "Pending" : "Failed"}
+              <Badge className={`${getStatusColor(transaction.status)} px-2 py-1 text-xs`}>
+                {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
               </Badge>
+            </div>
+            {transaction.recipient && (
+              <div className="flex justify-between items-center py-2">
+                <span className="text-muted-foreground">
+                  {transaction.type === "sent" ? "Sent to" : transaction.type === "request" ? "Requested from" : "From"}
+                </span>
+                <span className="text-foreground font-medium">{transaction.recipient}</span>
+              </div>
+            )}
+            {transaction.method && (
+              <div className="flex justify-between items-center py-2">
+                <span className="text-muted-foreground">Method</span>
+                <span className="text-foreground font-medium">{transaction.method}</span>
+              </div>
+            )}
+            {transaction.note && (
+              <div className="flex justify-between items-start py-2">
+                <span className="text-muted-foreground">Note</span>
+                <span className="text-foreground font-medium text-right flex-1 ml-4">{transaction.note}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-start py-2">
+              <span className="text-muted-foreground">Description</span>
+              <span className="text-foreground font-medium text-right flex-1 ml-4">{transaction.description}</span>
             </div>
           </div>
         </Card>
-      </div>
 
-      {/* QR Code */}
-      <div className="px-4 mb-6">
-        <Card className="p-6">
-          <div className="text-center">
-            <div className="flex items-center justify-center space-x-2 mb-4">
-              <Receipt className="h-5 w-5 text-primary" />
-              <h3 className="font-medium text-foreground">Transaction Receipt</h3>
-            </div>
-            
-            <div className="bg-white p-4 rounded-lg inline-block">
+        {/* QR Code */}
+        <Card className="p-5 text-center">
+          <h3 className="font-semibold text-foreground mb-4">Transaction QR Code</h3>
+          <div className="flex justify-center mb-4">
+            <div className="p-4 bg-white rounded-lg">
               <QRCodeSVG 
                 value={qrData}
-                size={160}
+                size={150}
                 level="M"
                 includeMargin={true}
               />
             </div>
-            
-            <p className="text-sm text-muted-foreground mt-4">
-              Scan this QR code to verify transaction
-            </p>
           </div>
+          <p className="text-sm text-muted-foreground">
+            Scan this QR code to verify the transaction
+          </p>
         </Card>
       </div>
 
-      {/* Action Buttons */}
-      <div className="px-4 pb-6">
+      {/* Actions */}
+      <div className="p-4 pb-8">
         <Button 
-          onClick={() => navigate('/wallet')}
-          className="w-full bg-gradient-primary hover:opacity-90"
+          onClick={() => navigate("/wallet")}
+          className="w-full h-12 bg-gradient-primary hover:opacity-90"
         >
           Back to Wallet
         </Button>
