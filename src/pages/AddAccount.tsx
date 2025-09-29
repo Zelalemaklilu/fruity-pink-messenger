@@ -1,22 +1,26 @@
 import { useState } from "react";
-import { ArrowLeft, Phone, Plus } from "lucide-react";
+import { ArrowLeft, Phone, Plus, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { AccountStore } from "@/lib/accountStore";
 
 const AddAccount = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [name, setName] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleAddAccount = () => {
-    if (phoneNumber.trim()) {
-      // Add account logic here
+    if (phoneNumber.trim() && name.trim()) {
+      const fullPhoneNumber = `+251 ${phoneNumber}`;
+      AccountStore.addAccount(name, fullPhoneNumber);
+      
       toast({
         title: "Account Added",
-        description: "Account has been added successfully",
+        description: `${name} has been added successfully`,
       });
       navigate("/settings");
     }
@@ -41,12 +45,25 @@ const AddAccount = () => {
             Add New Account
           </h2>
           <p className="text-muted-foreground">
-            Enter phone number for the new account
+            Enter account details for the new account
           </p>
         </div>
 
         <div className="space-y-4">
           <Card className="p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Account Name
+              </label>
+              <Input
+                type="text"
+                placeholder="Enter account name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
                 Country
@@ -81,10 +98,10 @@ const AddAccount = () => {
       <div className="p-6">
         <Button 
           onClick={handleAddAccount}
-          disabled={!phoneNumber.trim()}
+          disabled={!phoneNumber.trim() || !name.trim()}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
-          <Phone className="h-5 w-5 mr-2" />
+          <User className="h-5 w-5 mr-2" />
           Add Account
         </Button>
       </div>

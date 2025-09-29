@@ -1,11 +1,24 @@
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ChatAvatar } from "@/components/ui/chat-avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
+import { AccountStore, Account } from "@/lib/accountStore";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+
+  useEffect(() => {
+    // Initialize default account if none exist
+    AccountStore.initializeDefaultAccount();
+    
+    // Load accounts and active account
+    setAccounts(AccountStore.getAccounts());
+    setActiveAccount(AccountStore.getActiveAccount());
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
@@ -51,7 +64,13 @@ const Settings = () => {
   };
 
   const handleAddAccount = () => {
-    navigate('/add-account');
+    navigate("/add-account");
+  };
+
+  const handleSwitchAccount = (accountId: string) => {
+    AccountStore.switchAccount(accountId);
+    setActiveAccount(AccountStore.getActiveAccount());
+    setAccounts(AccountStore.getAccounts());
   };
 
   const menuItems = [
@@ -82,27 +101,53 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* User Profile Section */}
+      {/* User Accounts Section */}
       <div className="p-4">
-        <Card className="p-4">
-          <div className="flex items-center space-x-4">
-            <ChatAvatar
-              name="You"
-              size="lg"
-              status="online"
-            />
-            <div className="flex-1">
-              <h3 className="font-semibold text-foreground">Your Name</h3>
-              <p className="text-sm text-muted-foreground">+251 9XX XXX XXX</p>
-            </div>
+        <Card className="p-6 space-y-4 bg-card border-border">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-foreground">Accounts</h3>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="text-primary hover:bg-primary/10"
+              onClick={handleAddAccount}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
           </div>
-          <Button 
-            variant="ghost" 
-            className="w-full mt-4 text-primary hover:text-primary/80"
-            onClick={handleAddAccount}
-          >
-            Add another account
-          </Button>
+
+          {accounts.map((account) => (
+            <div 
+              key={account.id}
+              className={`flex items-center space-x-4 p-3 rounded-lg border cursor-pointer transition-smooth ${
+                activeAccount?.id === account.id 
+                  ? 'border-primary bg-primary/5' 
+                  : 'border-border hover:bg-accent/50'
+              }`}
+              onClick={() => handleSwitchAccount(account.id)}
+            >
+              <Avatar className="h-12 w-12 border border-primary/20">
+                <AvatarImage src={account.avatar} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {account.name.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold text-foreground">
+                  {account.name}
+                </h4>
+                <p className="text-muted-foreground text-sm">
+                  {account.phoneNumber}
+                </p>
+              </div>
+
+              {activeAccount?.id === account.id && (
+                <Check className="h-5 w-5 text-primary" />
+              )}
+            </div>
+          ))}
         </Card>
       </div>
 
