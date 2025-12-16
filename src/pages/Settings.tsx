@@ -1,28 +1,60 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
-import { AccountStore, Account } from "@/lib/accountStore";
+import { getAccountsByUserId, setActiveAccount, Account } from "@/lib/firestoreService";
+import { logOut } from "@/lib/firebaseAuth";
+import { toast } from "sonner";
 
 const Settings = () => {
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    // Initialize default account if none exist
-    AccountStore.initializeDefaultAccount();
-    
-    // Load accounts and active account
-    setAccounts(AccountStore.getAccounts());
-    setActiveAccount(AccountStore.getActiveAccount());
+    loadAccounts();
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    navigate('/');
+  const loadAccounts = async () => {
+    try {
+      const userId = localStorage.getItem('firebaseUserId');
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
+      const userAccounts = await getAccountsByUserId(userId);
+      setAccounts(userAccounts);
+      
+      // Find active account
+      const active = userAccounts.find(acc => acc.isActive);
+      if (active?.id) {
+        setActiveAccountId(active.id);
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
+      toast.error("Failed to load accounts");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logOut();
+      localStorage.removeItem('firebaseUserId');
+      toast.success("Logged out successfully");
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error("Failed to log out");
+      setLoggingOut(false);
+    }
   };
 
   const handleMenuClick = (label: string) => {
@@ -46,7 +78,6 @@ const Settings = () => {
         navigate('/saved-messages');
         break;
       case "Settings":
-        // Already on settings page
         break;
       case "Invite Friends":
         navigator.share?.({
@@ -67,10 +98,21 @@ const Settings = () => {
     navigate("/add-account");
   };
 
-  const handleSwitchAccount = (accountId: string) => {
-    AccountStore.switchAccount(accountId);
-    setActiveAccount(AccountStore.getActiveAccount());
-    setAccounts(AccountStore.getAccounts());
+  const handleSwitchAccount = async (accountId: string) => {
+    try {
+      const userId = localStorage.getItem('firebaseUserId');
+      if (!userId || !accountId) return;
+
+      await setActiveAccount(userId, accountId);
+      setActiveAccountId(accountId);
+      
+      // Reload accounts to reflect changes
+      await loadAccounts();
+      toast.success("Account switched");
+    } catch (error) {
+      console.error('Error switching account:', error);
+      toast.error("Failed to switch account");
+    }
   };
 
   const menuItems = [
@@ -117,37 +159,44 @@ const Settings = () => {
             </Button>
           </div>
 
-          {accounts.map((account) => (
-            <div 
-              key={account.id}
-              className={`flex items-center space-x-4 p-3 rounded-lg border cursor-pointer transition-smooth ${
-                activeAccount?.id === account.id 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-border hover:bg-accent/50'
-              }`}
-              onClick={() => handleSwitchAccount(account.id)}
-            >
-              <Avatar className="h-12 w-12 border border-primary/20">
-                <AvatarImage src={account.avatar} />
-                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                  {account.name.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              
-              <div className="flex-1 min-w-0">
-                <h4 className="font-semibold text-foreground">
-                  {account.name}
-                </h4>
-                <p className="text-muted-foreground text-sm">
-                  {account.phoneNumber}
-                </p>
-              </div>
-
-              {activeAccount?.id === account.id && (
-                <Check className="h-5 w-5 text-primary" />
-              )}
+          {loading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          ))}
+          ) : accounts.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4">No accounts found</p>
+          ) : (
+            accounts.map((account) => (
+              <div 
+                key={account.id}
+                className={`flex items-center space-x-4 p-3 rounded-lg border cursor-pointer transition-smooth ${
+                  activeAccountId === account.id 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-border hover:bg-accent/50'
+                }`}
+                onClick={() => account.id && handleSwitchAccount(account.id)}
+              >
+                <Avatar className="h-12 w-12 border border-primary/20">
+                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                    {account.name.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-foreground">
+                    {account.name}
+                  </h4>
+                  <p className="text-muted-foreground text-sm">
+                    {account.phoneNumber}
+                  </p>
+                </div>
+
+                {activeAccountId === account.id && (
+                  <Check className="h-5 w-5 text-primary" />
+                )}
+              </div>
+            ))
+          )}
         </Card>
       </div>
 
@@ -176,9 +225,14 @@ const Settings = () => {
             variant="ghost" 
             className="w-full justify-start text-destructive hover:text-destructive"
             onClick={handleLogout}
+            disabled={loggingOut}
           >
-            <LogOut className="h-5 w-5 mr-3" />
-            Log Out
+            {loggingOut ? (
+              <Loader2 className="h-5 w-5 mr-3 animate-spin" />
+            ) : (
+              <LogOut className="h-5 w-5 mr-3" />
+            )}
+            {loggingOut ? "Logging out..." : "Log Out"}
           </Button>
         </Card>
       </div>

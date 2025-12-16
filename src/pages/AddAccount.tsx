@@ -1,28 +1,47 @@
 import { useState } from "react";
-import { ArrowLeft, Phone, Plus, User } from "lucide-react";
+import { ArrowLeft, Plus, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
-import { AccountStore } from "@/lib/accountStore";
+import { createAccount } from "@/lib/firestoreService";
+import { toast } from "sonner";
 
 const AddAccount = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useToast();
 
-  const handleAddAccount = () => {
-    if (phoneNumber.trim() && name.trim()) {
-      const fullPhoneNumber = `+251 ${phoneNumber}`;
-      AccountStore.addAccount(name, fullPhoneNumber);
+  const handleAddAccount = async () => {
+    if (!phoneNumber.trim() || !name.trim()) return;
+
+    const userId = localStorage.getItem('firebaseUserId');
+    if (!userId) {
+      toast.error("Please login first");
+      navigate("/auth");
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const fullPhoneNumber = `+251${phoneNumber.replace(/\s/g, '')}`;
       
-      toast({
-        title: "Account Added",
-        description: `${name} has been added successfully`,
+      await createAccount({
+        userId,
+        name: name.trim(),
+        phoneNumber: fullPhoneNumber,
+        isActive: false
       });
+      
+      toast.success(`${name} has been added successfully`);
       navigate("/settings");
+    } catch (error) {
+      console.error('Error adding account:', error);
+      toast.error("Failed to add account");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -98,11 +117,20 @@ const AddAccount = () => {
       <div className="p-6">
         <Button 
           onClick={handleAddAccount}
-          disabled={!phoneNumber.trim() || !name.trim()}
+          disabled={!phoneNumber.trim() || !name.trim() || loading}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
-          <User className="h-5 w-5 mr-2" />
-          Add Account
+          {loading ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Adding...
+            </>
+          ) : (
+            <>
+              <User className="h-5 w-5 mr-2" />
+              Add Account
+            </>
+          )}
         </Button>
       </div>
     </div>
