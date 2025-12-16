@@ -216,6 +216,18 @@ const Auth = () => {
               )}
             </Card>
 
+            {!isSignUp && (
+              <div className="text-center">
+                <Button 
+                  variant="link" 
+                  className="text-primary"
+                  onClick={() => navigate("/forgot-password")}
+                >
+                  Forgot Password?
+                </Button>
+              </div>
+            )}
+
             <Button 
               onClick={handleEmailAuth}
               disabled={!email.trim() || !password.trim() || loading}
