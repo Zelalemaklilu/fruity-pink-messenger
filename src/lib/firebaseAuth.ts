@@ -7,7 +7,8 @@ import {
   User,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendEmailVerification
+  sendEmailVerification,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { auth } from './firebase';
 
@@ -76,6 +77,16 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     return result.user;
   } catch (error: any) {
     console.error('Error signing in with email:', error);
+    throw error;
+  }
+};
+
+// Send password reset email
+export const resetPassword = async (email: string): Promise<void> => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error: any) {
+    console.error('Error sending password reset email:', error);
     throw error;
   }
 };

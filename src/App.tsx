@@ -8,6 +8,7 @@ import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
 import OTP from "./pages/OTP";
 import EmailVerification from "./pages/EmailVerification";
+import ForgotPassword from "./pages/ForgotPassword";
 import Chats from "./pages/Chats";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
@@ -102,6 +103,9 @@ const AppRoutes = () => {
       } />
       <Route path="/email-verification" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <EmailVerification />
+      } />
+      <Route path="/forgot-password" element={
+        isAuthenticated ? <Navigate to="/chats" replace /> : <ForgotPassword />
       } />
       <Route path="/chats" element={
         isAuthenticated ? <Chats /> : <Navigate to="/" replace />
