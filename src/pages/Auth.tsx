@@ -1,19 +1,63 @@
-import { useState } from "react";
-import { ArrowLeft, Phone } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Phone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
+import { initRecaptcha, sendOTP } from "@/lib/firebaseAuth";
+import { RecaptchaVerifier } from "firebase/auth";
+import { toast } from "sonner";
 
 const Auth = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [syncContacts, setSyncContacts] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
   const navigate = useNavigate();
 
-  const handleContinue = () => {
-    if (phoneNumber.trim()) {
+  useEffect(() => {
+    // Initialize reCAPTCHA when component mounts
+    const verifier = initRecaptcha('recaptcha-container');
+    if (verifier) {
+      setRecaptchaVerifier(verifier);
+    }
+  }, []);
+
+  const handleContinue = async () => {
+    if (!phoneNumber.trim()) {
+      toast.error("Please enter your phone number");
+      return;
+    }
+
+    if (!recaptchaVerifier) {
+      toast.error("reCAPTCHA not initialized. Please refresh the page.");
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const fullPhoneNumber = `+251${phoneNumber.replace(/\s/g, '')}`;
+      
+      // Store phone number for OTP page
+      localStorage.setItem('pendingPhoneNumber', fullPhoneNumber);
+      
+      await sendOTP(fullPhoneNumber, recaptchaVerifier);
+      toast.success("Verification code sent!");
       navigate("/otp");
+    } catch (error: any) {
+      console.error('Error sending OTP:', error);
+      
+      if (error.code === 'auth/invalid-phone-number') {
+        toast.error("Invalid phone number format");
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error("Too many requests. Please try again later.");
+      } else {
+        toast.error("Failed to send verification code. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -79,14 +123,26 @@ const Auth = () => {
         </div>
       </div>
 
+      {/* reCAPTCHA container */}
+      <div id="recaptcha-container"></div>
+
       <div className="p-6">
         <Button 
           onClick={handleContinue}
-          disabled={!phoneNumber.trim()}
+          disabled={!phoneNumber.trim() || loading}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
-          <Phone className="h-5 w-5 mr-2" />
-          Continue
+          {loading ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Sending...
+            </>
+          ) : (
+            <>
+              <Phone className="h-5 w-5 mr-2" />
+              Continue
+            </>
+          )}
         </Button>
       </div>
     </div>
