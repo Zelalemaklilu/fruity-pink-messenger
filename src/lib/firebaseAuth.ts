@@ -4,7 +4,10 @@ import {
   ConfirmationResult,
   signOut,
   onAuthStateChanged,
-  User
+  User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification
 } from 'firebase/auth';
 import { auth } from './firebase';
 
@@ -49,6 +52,30 @@ export const verifyOTP = async (code: string): Promise<User | null> => {
     return result.user;
   } catch (error: any) {
     console.error('Error verifying OTP:', error);
+    throw error;
+  }
+};
+
+// Sign up with email and password
+export const signUpWithEmail = async (email: string, password: string): Promise<User> => {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    // Send email verification
+    await sendEmailVerification(result.user);
+    return result.user;
+  } catch (error: any) {
+    console.error('Error signing up with email:', error);
+    throw error;
+  }
+};
+
+// Sign in with email and password
+export const signInWithEmail = async (email: string, password: string): Promise<User> => {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
+  } catch (error: any) {
+    console.error('Error signing in with email:', error);
     throw error;
   }
 };
