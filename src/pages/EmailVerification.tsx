@@ -20,6 +20,8 @@ const EmailVerification = () => {
       if (auth.currentUser) {
         await auth.currentUser.reload();
         if (auth.currentUser.emailVerified) {
+          localStorage.setItem("authToken", auth.currentUser.uid);
+          localStorage.setItem("firebaseUserId", auth.currentUser.uid);
           toast.success("Email verified successfully!");
           navigate("/chats");
         }
@@ -60,6 +62,8 @@ const EmailVerification = () => {
     try {
       await auth.currentUser.reload();
       if (auth.currentUser.emailVerified) {
+        localStorage.setItem("authToken", auth.currentUser.uid);
+        localStorage.setItem("firebaseUserId", auth.currentUser.uid);
         toast.success("Email verified!");
         navigate("/chats");
       } else {

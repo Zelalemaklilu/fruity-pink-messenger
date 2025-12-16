@@ -104,7 +104,10 @@ const Auth = () => {
         }
         
         AccountStore.switchAccount(existingAccount.id);
-        
+
+        localStorage.setItem("authToken", user.uid);
+        localStorage.setItem("firebaseUserId", user.uid);
+
         toast.success("Signed in successfully!");
         navigate("/chats");
       }
