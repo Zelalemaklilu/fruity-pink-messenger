@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Phone, Mail, Loader2, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Phone, Mail, Loader2, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -7,9 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
 import { initRecaptcha, sendOTP, signUpWithEmail, signInWithEmail } from "@/lib/firebaseAuth";
-import { RecaptchaVerifier } from "firebase/auth";
+import { RecaptchaVerifier, sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
+import { auth } from "@/lib/firebase";
 
 const Auth = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -20,6 +21,8 @@ const Auth = () => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [syncContacts, setSyncContacts] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [showResendOption, setShowResendOption] = useState(false);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
   const navigate = useNavigate();
 
@@ -91,9 +94,11 @@ const Auth = () => {
         const user = await signInWithEmail(email, password);
         if (!user.emailVerified) {
           toast.error("Please verify your email before signing in");
-          navigate("/email-verification", { state: { email } });
+          setShowResendOption(true);
           return;
         }
+        
+        setShowResendOption(false);
         
         // Create or find account for this email user
         const accounts = AccountStore.getAccounts();
@@ -129,6 +134,27 @@ const Auth = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!auth.currentUser) {
+      toast.error("Please sign in first");
+      return;
+    }
+
+    setResendLoading(true);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      toast.success("Verification email sent!");
+    } catch (error: any) {
+      if (error.code === 'auth/too-many-requests') {
+        toast.error("Too many requests. Please wait before trying again.");
+      } else {
+        toast.error("Failed to send verification email");
+      }
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -232,7 +258,7 @@ const Auth = () => {
             </Card>
 
             {!isSignUp && (
-              <div className="text-center">
+              <div className="text-center space-y-2">
                 <Button 
                   variant="link" 
                   className="text-primary"
@@ -240,6 +266,33 @@ const Auth = () => {
                 >
                   Forgot Password?
                 </Button>
+                
+                {showResendOption && (
+                  <div className="pt-2">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Email not verified yet?
+                    </p>
+                    <Button 
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResendVerification}
+                      disabled={resendLoading}
+                      className="rounded-full"
+                    >
+                      {resendLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Resend verification email
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
