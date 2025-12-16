@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { initRecaptcha, sendOTP, signUpWithEmail, signInWithEmail } from "@/lib/firebaseAuth";
 import { RecaptchaVerifier } from "firebase/auth";
 import { toast } from "sonner";
+import { AccountStore } from "@/lib/accountStore";
 
 const Auth = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -93,6 +94,17 @@ const Auth = () => {
           navigate("/email-verification", { state: { email } });
           return;
         }
+        
+        // Create or find account for this email user
+        const accounts = AccountStore.getAccounts();
+        let existingAccount = accounts.find(acc => acc.phoneNumber === email);
+        
+        if (!existingAccount) {
+          existingAccount = AccountStore.addAccount(email.split('@')[0], email);
+        }
+        
+        AccountStore.switchAccount(existingAccount.id);
+        
         toast.success("Signed in successfully!");
         navigate("/chats");
       }
