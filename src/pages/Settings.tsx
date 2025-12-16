@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
 import { useNavigate } from "react-router-dom";
 import { getAccountsByUserId, setActiveAccount, Account } from "@/lib/firestoreService";
 import { logOut } from "@/lib/firebaseAuth";
 import { toast } from "sonner";
+import { requestNotificationPermission, getNotificationPermissionStatus, isNotificationSupported, onForegroundMessage, initializeMessaging } from "@/lib/firebaseMessaging";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -14,10 +16,51 @@ const Settings = () => {
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
 
   useEffect(() => {
     loadAccounts();
+    checkNotificationStatus();
   }, []);
+
+  const checkNotificationStatus = () => {
+    const status = getNotificationPermissionStatus();
+    setNotificationsEnabled(status === 'granted');
+  };
+
+  const handleToggleNotifications = async () => {
+    if (!isNotificationSupported()) {
+      toast.error("Notifications not supported in this browser");
+      return;
+    }
+
+    setNotificationLoading(true);
+    
+    if (!notificationsEnabled) {
+      try {
+        await initializeMessaging();
+        const token = await requestNotificationPermission();
+        if (token) {
+          setNotificationsEnabled(true);
+          // Set up foreground message listener
+          onForegroundMessage((payload) => {
+            console.log('Notification received:', payload);
+          });
+          toast.success("Notifications enabled!");
+        } else {
+          toast.error("Permission denied. Please enable in browser settings.");
+        }
+      } catch (error) {
+        console.error('Error enabling notifications:', error);
+        toast.error("Failed to enable notifications");
+      }
+    } else {
+      toast.info("To disable notifications, please update your browser settings");
+    }
+    
+    setNotificationLoading(false);
+  };
 
   const loadAccounts = async () => {
     try {
@@ -218,8 +261,32 @@ const Settings = () => {
         ))}
       </div>
 
+      {/* Notification Settings */}
+      <div className="p-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className={`p-2 rounded-lg bg-muted ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'}`}>
+                {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+              </div>
+              <div>
+                <span className="font-medium text-foreground">Push Notifications</span>
+                <p className="text-xs text-muted-foreground">
+                  {notificationsEnabled ? 'Enabled' : 'Disabled'}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={notificationsEnabled}
+              onCheckedChange={handleToggleNotifications}
+              disabled={notificationLoading}
+            />
+          </div>
+        </Card>
+      </div>
+
       {/* Logout Section */}
-      <div className="p-4 mt-6">
+      <div className="p-4">
         <Card className="p-4">
           <Button 
             variant="ghost" 
