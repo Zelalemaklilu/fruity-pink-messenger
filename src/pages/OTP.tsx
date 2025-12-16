@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
+import { verifyOTP } from "@/lib/firebaseAuth";
+import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
+import { toast } from "sonner";
 
 const OTP = () => {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -30,22 +34,52 @@ const OTP = () => {
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const otpCode = otp.join("");
     if (otpCode.length !== 6) {
       setError("Please enter the complete verification code");
       return;
     }
 
-    // For demo purposes, accept 123456 as correct code
-    if (otpCode === "123456") {
-      console.log('OTP verified, setting auth token and navigating');
-      localStorage.setItem('authToken', 'verified');
+    setLoading(true);
+    
+    try {
+      const user = await verifyOTP(otpCode);
       
-      // Force a page reload to ensure the App component re-evaluates auth state
-      window.location.href = '/chats';
-    } else {
-      setError("Invalid verification code. Please try again.");
+      if (user) {
+        // Check if user already has an account
+        const existingAccounts = await getAccountsByUserId(user.uid);
+        
+        if (existingAccounts.length === 0) {
+          // Create default account for new user
+          const phoneNumber = localStorage.getItem('pendingPhoneNumber') || user.phoneNumber || '';
+          await createAccount({
+            userId: user.uid,
+            name: 'Primary Account',
+            phoneNumber: phoneNumber,
+            isActive: true
+          });
+        }
+        
+        localStorage.setItem('authToken', 'verified');
+        localStorage.setItem('firebaseUserId', user.uid);
+        localStorage.removeItem('pendingPhoneNumber');
+        
+        toast.success("Successfully verified!");
+        window.location.href = '/chats';
+      }
+    } catch (error: any) {
+      console.error('Verification error:', error);
+      
+      if (error.code === 'auth/invalid-verification-code') {
+        setError("Invalid verification code. Please try again.");
+      } else if (error.code === 'auth/code-expired') {
+        setError("Code expired. Please request a new one.");
+      } else {
+        setError("Verification failed. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -68,9 +102,6 @@ const OTP = () => {
           </h1>
           <p className="text-muted-foreground">
             We've sent a verification code to your phone number.
-          </p>
-          <p className="text-xs text-muted-foreground mt-4">
-            Demo: Use code 123456
           </p>
         </div>
 
@@ -99,6 +130,7 @@ const OTP = () => {
             <Button 
               variant="ghost" 
               className="text-primary hover:text-primary/80"
+              onClick={() => navigate("/auth")}
             >
               Resend Code
             </Button>
@@ -112,10 +144,17 @@ const OTP = () => {
       <div className="p-6">
         <Button 
           onClick={handleVerify}
-          disabled={otp.some(digit => !digit)}
+          disabled={otp.some(digit => !digit) || loading}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
-          Verify Code
+          {loading ? (
+            <>
+              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+              Verifying...
+            </>
+          ) : (
+            "Verify Code"
+          )}
         </Button>
       </div>
     </div>
