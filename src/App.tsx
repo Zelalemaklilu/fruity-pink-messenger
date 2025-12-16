@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
 import OTP from "./pages/OTP";
+import EmailVerification from "./pages/EmailVerification";
 import Chats from "./pages/Chats";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
@@ -98,6 +99,9 @@ const AppRoutes = () => {
       } />
       <Route path="/otp" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <OTP />
+      } />
+      <Route path="/email-verification" element={
+        isAuthenticated ? <Navigate to="/chats" replace /> : <EmailVerification />
       } />
       <Route path="/chats" element={
         isAuthenticated ? <Chats /> : <Navigate to="/" replace />
