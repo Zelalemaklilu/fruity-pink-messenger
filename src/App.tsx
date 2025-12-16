@@ -33,35 +33,16 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const AppRoutes = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated
-    const checkAuth = () => {
-      const authToken = localStorage.getItem('authToken');
-      console.log('Checking auth token:', authToken);
-      setIsAuthenticated(!!authToken);
-      setIsLoading(false);
-    };
-
-    checkAuth();
-
-    // Listen for storage changes
-    const handleStorageChange = () => {
-      checkAuth();
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
+    setIsReady(true);
   }, []);
 
-  console.log('App state - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated);
+  const isAuthenticated =
+    typeof window !== "undefined" && !!localStorage.getItem("authToken");
 
-  if (isLoading) {
+  if (!isReady) {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
         <div className="text-center space-y-6 animate-in fade-in-0 duration-1000">
