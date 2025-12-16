@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, MoreVertical, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { useNavigate } from "react-router-dom";
+import { getChatsByAccountId, Chat as FirestoreChat } from "@/lib/firestoreService";
+import { AccountStore } from "@/lib/accountStore";
+import { Timestamp } from "firebase/firestore";
 
-interface Chat {
+interface ChatDisplay {
   id: string;
   name: string;
   lastMessage: string;
@@ -16,46 +19,58 @@ interface Chat {
   status: "online" | "away" | "offline";
 }
 
-const mockChats: Chat[] = [
-  {
-    id: "1",
-    name: "Alex Johnson",
-    lastMessage: "Hey! How's the project going?",
-    timestamp: "12:30",
-    unreadCount: 2,
-    status: "online"
-  },
-  {
-    id: "2", 
-    name: "Sarah Williams",
-    lastMessage: "Thanks for the files! 📁",
-    timestamp: "11:45",
-    unreadCount: 0,
-    status: "away"
-  },
-  {
-    id: "3",
-    name: "Team Group",
-    lastMessage: "Meeting at 3 PM today",
-    timestamp: "Yesterday",
-    unreadCount: 5,
-    status: "online"
-  },
-  {
-    id: "4",
-    name: "John Smith",
-    lastMessage: "Sure, let's catch up later",
-    timestamp: "Monday", 
-    unreadCount: 0,
-    status: "offline"
+const formatTimestamp = (timestamp?: Timestamp): string => {
+  if (!timestamp) return "";
+  const date = timestamp.toDate();
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diffDays === 1) {
+    return "Yesterday";
+  } else if (diffDays < 7) {
+    return date.toLocaleDateString([], { weekday: 'long' });
   }
-];
+  return date.toLocaleDateString();
+};
 
 const Chats = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [chats, setChats] = useState<ChatDisplay[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const activeAccount = AccountStore.getActiveAccount();
 
-  const filteredChats = mockChats.filter(chat =>
+  useEffect(() => {
+    const loadChats = async () => {
+      if (!activeAccount?.id) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        const firestoreChats = await getChatsByAccountId(activeAccount.id);
+        const displayChats: ChatDisplay[] = firestoreChats.map((chat: FirestoreChat) => ({
+          id: chat.id || "",
+          name: chat.isGroup ? (chat.groupName || "Group") : chat.participantNames[0] || "Unknown",
+          lastMessage: chat.lastMessage || "No messages yet",
+          timestamp: formatTimestamp(chat.lastMessageAt),
+          unreadCount: 0,
+          status: "offline" as const
+        }));
+        setChats(displayChats);
+      } catch (error) {
+        console.error("Error loading chats:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadChats();
+  }, [activeAccount]);
+
+  const filteredChats = chats.filter(chat =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 

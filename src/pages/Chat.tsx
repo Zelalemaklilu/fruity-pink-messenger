@@ -5,8 +5,11 @@ import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { useNavigate, useParams } from "react-router-dom";
+import { getMessagesByChatId, sendMessage, updateChat, Message as FirestoreMessage } from "@/lib/firestoreService";
+import { AccountStore } from "@/lib/accountStore";
+import { Timestamp, serverTimestamp } from "firebase/firestore";
 
-interface Message {
+interface MessageDisplay {
   id: string;
   text: string;
   timestamp: string;
@@ -14,44 +17,22 @@ interface Message {
   status?: "sent" | "delivered" | "read";
 }
 
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    text: "Hey! How's the project going?",
-    timestamp: "12:30",
-    isOwn: false
-  },
-  {
-    id: "2", 
-    text: "Going well! Just finished the authentication flow. Want to see?",
-    timestamp: "12:32",
-    isOwn: true,
-    status: "read"
-  },
-  {
-    id: "3",
-    text: "Absolutely! Send it over 🚀",
-    timestamp: "12:33",
-    isOwn: false
-  },
-  {
-    id: "4",
-    text: "Here's the demo link. The UI looks really clean with the new design system.",
-    timestamp: "12:35",
-    isOwn: true,
-    status: "delivered"
-  }
-];
+const formatTime = (timestamp?: Timestamp): string => {
+  if (!timestamp) return "";
+  return timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
 
 const Chat = () => {
-  const [messages, setMessages] = useState(mockMessages);
+  const [messages, setMessages] = useState<MessageDisplay[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { chatId } = useParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeAccount = AccountStore.getActiveAccount();
 
-  const chatName = "Alex Johnson";
+  const chatName = "Chat";
   const chatStatus = "online";
 
   const scrollToBottom = () => {
@@ -59,21 +40,68 @@ const Chat = () => {
   };
 
   useEffect(() => {
+    const loadMessages = async () => {
+      if (!chatId) return;
+      
+      try {
+        const firestoreMessages = await getMessagesByChatId(chatId);
+        const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => ({
+          id: msg.id || "",
+          text: msg.content,
+          timestamp: formatTime(msg.createdAt),
+          isOwn: msg.senderId === activeAccount?.id,
+          status: msg.status
+        }));
+        setMessages(displayMessages);
+      } catch (error) {
+        console.error("Error loading messages:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMessages();
+  }, [chatId, activeAccount]);
+
+  useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      const message: Message = {
-        id: Date.now().toString(),
-        text: newMessage.trim(),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isOwn: true,
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !chatId || !activeAccount?.id) return;
+
+    const messageText = newMessage.trim();
+    const tempId = Date.now().toString();
+    
+    // Optimistic update
+    const tempMessage: MessageDisplay = {
+      id: tempId,
+      text: messageText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isOwn: true,
+      status: "sent"
+    };
+    setMessages(prev => [...prev, tempMessage]);
+    setNewMessage("");
+
+    try {
+      await sendMessage({
+        accountId: activeAccount.id,
+        chatId: chatId,
+        senderId: activeAccount.id,
+        receiverId: "", // Will be set based on chat participants
+        content: messageText,
+        type: "text",
         status: "sent"
-      };
-      
-      setMessages(prev => [...prev, message]);
-      setNewMessage("");
+      });
+
+      // Update chat's last message
+      await updateChat(chatId, {
+        lastMessage: messageText,
+        lastMessageAt: serverTimestamp() as Timestamp
+      });
+    } catch (error) {
+      console.error("Error sending message:", error);
     }
   };
 
