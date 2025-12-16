@@ -3,15 +3,13 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// TODO: Replace with your Firebase project configuration
-// Get this from Firebase Console > Project Settings > Your Apps > Firebase SDK snippet
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDFJ7EHuECoEo99wWVMMkffYoMP5bFXVkM",
+  authDomain: "studio-8672600014-3dc36.firebaseapp.com",
+  projectId: "studio-8672600014-3dc36",
+  storageBucket: "studio-8672600014-3dc36.firebasestorage.app",
+  messagingSenderId: "322857909990",
+  appId: "1:322857909990:web:eddd94ff7decd2eac38527"
 };
 
 // Initialize Firebase
