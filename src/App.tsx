@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
@@ -34,6 +34,7 @@ const queryClient = new QueryClient();
 
 const AppRoutes = () => {
   const [isReady, setIsReady] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     setIsReady(true);
@@ -72,7 +73,7 @@ const AppRoutes = () => {
   }
 
   return (
-    <Routes>
+    <Routes location={location}>
       <Route path="/" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <Splash />
       } />
@@ -90,6 +91,9 @@ const AppRoutes = () => {
       } />
       <Route path="/chats" element={
         isAuthenticated ? <Chats /> : <Navigate to="/" replace />
+      } />
+      <Route path="/chat" element={
+        isAuthenticated ? <Navigate to="/chats" replace /> : <Navigate to="/" replace />
       } />
       <Route path="/chat/:chatId" element={
         isAuthenticated ? <Chat /> : <Navigate to="/" replace />
