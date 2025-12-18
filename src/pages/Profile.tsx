@@ -1,21 +1,59 @@
-import { ArrowLeft, Phone, MessageSquare, UserX, Flag, MoreVertical, Images } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Phone, MessageSquare, UserX, Flag, MoreVertical, Images, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { AccountStore } from "@/lib/accountStore";
+import { getAccountsByUserId } from "@/lib/firestoreService";
+import { auth } from "@/lib/firebase";
 
 const Profile = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [account, setAccount] = useState<{ name: string; phoneNumber: string } | null>(null);
+
+  useEffect(() => {
+    const loadAccount = async () => {
+      // First try to get from Firestore
+      const userId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
+      if (userId) {
+        try {
+          const accounts = await getAccountsByUserId(userId);
+          if (accounts.length > 0) {
+            const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
+            setAccount({
+              name: activeAccount.name,
+              phoneNumber: activeAccount.phoneNumber
+            });
+            return;
+          }
+        } catch (error) {
+          console.error("Error loading Firestore account:", error);
+        }
+      }
+
+      // Fallback to local AccountStore
+      const localAccount = AccountStore.getActiveAccount();
+      if (localAccount) {
+        setAccount({
+          name: localAccount.name,
+          phoneNumber: localAccount.phoneNumber
+        });
+      }
+    };
+
+    loadAccount();
+  }, []);
 
   const handleStartChat = () => {
-    navigate("/chat/alex-johnson");
+    navigate("/chats");
   };
 
   const handleCall = () => {
     toast({
-      title: "Calling Alex Johnson",
+      title: "Calling",
       description: "Starting voice call...",
     });
   };
@@ -30,25 +68,24 @@ const Profile = () => {
   const handleBlockUser = () => {
     toast({
       title: "Block User",
-      description: "Are you sure you want to block Alex Johnson?",
-      variant: "destructive",
+      description: "This action is not available for your own profile",
     });
   };
 
   const handleReportUser = () => {
     toast({
-      title: "Report User",
-      description: "Report submitted successfully",
-      variant: "destructive",
+      title: "Report",
+      description: "This action is not available for your own profile",
     });
   };
 
   const handleMoreOptions = () => {
-    toast({
-      title: "More Options",
-      description: "Additional options coming soon...",
-    });
+    navigate("/settings");
   };
+
+  const displayName = account?.name || "User";
+  const displayPhone = account?.phoneNumber || "";
+  const isEmail = displayPhone.includes("@");
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,7 +114,7 @@ const Profile = () => {
         <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2">
           <div className="relative">
             <ChatAvatar
-              name="Alex Johnson"
+              name={displayName}
               size="lg"
               status="online"
               className="ring-4 ring-background w-32 h-32"
@@ -87,10 +124,12 @@ const Profile = () => {
       </div>
 
       <div className="pt-20 pb-6 text-center space-y-3 px-4">
-        <h2 className="text-2xl font-bold text-foreground">Alex Johnson</h2>
-        <p className="text-muted-foreground font-medium">@alexjohnson</p>
+        <h2 className="text-2xl font-bold text-foreground">{displayName}</h2>
+        <p className="text-muted-foreground font-medium">
+          {isEmail ? displayPhone : `@${displayName.toLowerCase().replace(/\s/g, '')}`}
+        </p>
         <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
-          Software Developer | Coffee enthusiast ☕ | Always learning something new 🚀
+          Welcome to Zeshopp! 🚀
         </p>
       </div>
 
@@ -121,15 +160,15 @@ const Profile = () => {
           <h3 className="font-semibold text-foreground text-lg">Info</h3>
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2">
-              <span className="text-muted-foreground">Phone</span>
-              <span className="text-foreground font-medium">+251 9XX XXX XXX</span>
+              <span className="text-muted-foreground">{isEmail ? "Email" : "Phone"}</span>
+              <span className="text-foreground font-medium">{displayPhone}</span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Username</span>
-              <span className="text-foreground font-medium">@alexjohnson</span>
+              <span className="text-foreground font-medium">@{displayName.toLowerCase().replace(/\s/g, '')}</span>
             </div>
             <div className="flex justify-between items-center py-2">
-              <span className="text-muted-foreground">Last seen</span>
+              <span className="text-muted-foreground">Status</span>
               <span className="text-status-online font-medium flex items-center gap-2">
                 <div className="w-2 h-2 bg-status-online rounded-full"></div>
                 Online
