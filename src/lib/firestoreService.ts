@@ -22,6 +22,8 @@ export interface Account {
   name: string;
   phoneNumber: string;
   isActive: boolean;
+  bio?: string;
+  avatarUrl?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }

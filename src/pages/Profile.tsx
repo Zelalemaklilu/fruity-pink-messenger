@@ -1,90 +1,131 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Phone, MessageSquare, UserX, Flag, MoreVertical, Images, Edit2 } from "lucide-react";
+import { ArrowLeft, Phone, MessageSquare, MoreVertical, Images, Edit2, Camera, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
-import { getAccountsByUserId } from "@/lib/firestoreService";
+import { getAccountsByUserId, updateAccount, Account } from "@/lib/firestoreService";
 import { auth } from "@/lib/firebase";
 
 const Profile = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const [account, setAccount] = useState<{ name: string; phoneNumber: string } | null>(null);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  
+  // Edit form state
+  const [editName, setEditName] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
 
   useEffect(() => {
-    const loadAccount = async () => {
-      // First try to get from Firestore
-      const userId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
-      if (userId) {
-        try {
-          const accounts = await getAccountsByUserId(userId);
-          if (accounts.length > 0) {
-            const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
-            setAccount({
-              name: activeAccount.name,
-              phoneNumber: activeAccount.phoneNumber
-            });
-            return;
-          }
-        } catch (error) {
-          console.error("Error loading Firestore account:", error);
-        }
-      }
-
-      // Fallback to local AccountStore
-      const localAccount = AccountStore.getActiveAccount();
-      if (localAccount) {
-        setAccount({
-          name: localAccount.name,
-          phoneNumber: localAccount.phoneNumber
-        });
-      }
-    };
-
     loadAccount();
   }, []);
+
+  const loadAccount = async () => {
+    setLoading(true);
+    const userId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
+    if (userId) {
+      try {
+        const accounts = await getAccountsByUserId(userId);
+        if (accounts.length > 0) {
+          const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
+          setAccount(activeAccount);
+          setEditName(activeAccount.name);
+          setEditBio(activeAccount.bio || "");
+          setEditAvatarUrl(activeAccount.avatarUrl || "");
+        }
+      } catch (error) {
+        console.error("Error loading Firestore account:", error);
+        // Fallback to local AccountStore
+        const localAccount = AccountStore.getActiveAccount();
+        if (localAccount) {
+          setAccount({
+            id: localAccount.id,
+            userId: userId,
+            name: localAccount.name,
+            phoneNumber: localAccount.phoneNumber,
+            isActive: true
+          });
+          setEditName(localAccount.name);
+        }
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!account?.id) {
+      toast.error("No account found");
+      return;
+    }
+
+    if (!editName.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateAccount(account.id, {
+        name: editName.trim(),
+        bio: editBio.trim(),
+        avatarUrl: editAvatarUrl.trim()
+      });
+
+      setAccount({
+        ...account,
+        name: editName.trim(),
+        bio: editBio.trim(),
+        avatarUrl: editAvatarUrl.trim()
+      });
+
+      setEditDialogOpen(false);
+      toast.success("Profile updated successfully!");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error("Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleStartChat = () => {
     navigate("/chats");
   };
 
   const handleCall = () => {
-    toast({
-      title: "Calling",
-      description: "Starting voice call...",
-    });
+    toast.info("Starting voice call...");
   };
 
   const handleViewMedia = () => {
-    toast({
-      title: "Shared Media",
-      description: "Opening media gallery...",
-    });
-  };
-
-  const handleBlockUser = () => {
-    toast({
-      title: "Block User",
-      description: "This action is not available for your own profile",
-    });
-  };
-
-  const handleReportUser = () => {
-    toast({
-      title: "Report",
-      description: "This action is not available for your own profile",
-    });
+    toast.info("Opening media gallery...");
   };
 
   const handleMoreOptions = () => {
     navigate("/settings");
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   const displayName = account?.name || "User";
   const displayPhone = account?.phoneNumber || "";
+  const displayBio = account?.bio || "Welcome to Zeshopp! 🚀";
+  const displayAvatar = account?.avatarUrl || "";
   const isEmail = displayPhone.includes("@");
 
   return (
@@ -113,12 +154,115 @@ const Profile = () => {
         <div className="h-40 bg-gradient-primary shadow-primary"></div>
         <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2">
           <div className="relative">
-            <ChatAvatar
-              name={displayName}
-              size="lg"
-              status="online"
-              className="ring-4 ring-background w-32 h-32"
-            />
+            {displayAvatar ? (
+              <Avatar className="w-32 h-32 ring-4 ring-background">
+                <AvatarImage src={displayAvatar} alt={displayName} />
+                <AvatarFallback className="text-3xl bg-primary/20 text-primary">
+                  {displayName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <ChatAvatar
+                name={displayName}
+                size="lg"
+                status="online"
+                className="ring-4 ring-background w-32 h-32"
+              />
+            )}
+            
+            {/* Edit Button on Avatar */}
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button 
+                  size="icon" 
+                  className="absolute bottom-0 right-0 h-10 w-10 rounded-full bg-primary hover:bg-primary/90"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Edit Profile</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  {/* Avatar Preview */}
+                  <div className="flex justify-center">
+                    <div className="relative">
+                      {editAvatarUrl ? (
+                        <Avatar className="w-24 h-24">
+                          <AvatarImage src={editAvatarUrl} alt="Preview" />
+                          <AvatarFallback className="text-2xl bg-primary/20 text-primary">
+                            {editName.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      ) : (
+                        <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center">
+                          <Camera className="h-8 w-8 text-primary" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Avatar URL Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="avatarUrl">Profile Photo URL</Label>
+                    <Input
+                      id="avatarUrl"
+                      placeholder="https://example.com/photo.jpg"
+                      value={editAvatarUrl}
+                      onChange={(e) => setEditAvatarUrl(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter a URL for your profile photo
+                    </p>
+                  </div>
+
+                  {/* Name Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      placeholder="Your name"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      maxLength={50}
+                    />
+                  </div>
+
+                  {/* Bio Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="bio">Bio</Label>
+                    <Textarea
+                      id="bio"
+                      placeholder="Tell us about yourself..."
+                      value={editBio}
+                      onChange={(e) => setEditBio(e.target.value)}
+                      maxLength={150}
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground text-right">
+                      {editBio.length}/150
+                    </p>
+                  </div>
+
+                  {/* Save Button */}
+                  <Button 
+                    onClick={handleSaveProfile}
+                    disabled={saving}
+                    className="w-full"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>
@@ -129,7 +273,7 @@ const Profile = () => {
           {isEmail ? displayPhone : `@${displayName.toLowerCase().replace(/\s/g, '')}`}
         </p>
         <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
-          Welcome to Zeshopp! 🚀
+          {displayBio}
         </p>
       </div>
 
@@ -141,7 +285,7 @@ const Profile = () => {
             onClick={handleStartChat}
           >
             <MessageSquare className="h-5 w-5 mr-2" />
-            Start Chat
+            Chats
           </Button>
           <Button 
             variant="outline" 
@@ -157,7 +301,18 @@ const Profile = () => {
       {/* Profile Info */}
       <div className="px-4 space-y-4 pb-6">
         <Card className="p-5 space-y-4 shadow-card">
-          <h3 className="font-semibold text-foreground text-lg">Info</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-foreground text-lg">Info</h3>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="text-primary"
+              onClick={() => setEditDialogOpen(true)}
+            >
+              <Edit2 className="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+          </div>
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">{isEmail ? "Email" : "Phone"}</span>
@@ -166,6 +321,12 @@ const Profile = () => {
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Username</span>
               <span className="text-foreground font-medium">@{displayName.toLowerCase().replace(/\s/g, '')}</span>
+            </div>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-muted-foreground">Bio</span>
+              <span className="text-foreground font-medium text-right max-w-[200px] truncate">
+                {displayBio}
+              </span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Status</span>
@@ -195,28 +356,6 @@ const Profile = () => {
             <Images className="h-4 w-4 mr-2" />
             View all media
           </Button>
-        </Card>
-
-        <Card className="p-5 space-y-4 shadow-card">
-          <h3 className="font-semibold text-foreground text-lg">Actions</h3>
-          <div className="space-y-1">
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 h-12"
-              onClick={handleBlockUser}
-            >
-              <UserX className="h-4 w-4 mr-3" />
-              Block User
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 h-12"
-              onClick={handleReportUser}
-            >
-              <Flag className="h-4 w-4 mr-3" />
-              Report User
-            </Button>
-          </div>
         </Card>
       </div>
     </div>
