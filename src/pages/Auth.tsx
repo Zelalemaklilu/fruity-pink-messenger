@@ -11,6 +11,7 @@ import { RecaptchaVerifier, sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
 import { auth } from "@/lib/firebase";
+import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
 
 const Auth = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -100,15 +101,27 @@ const Auth = () => {
         
         setShowResendOption(false);
         
-        // Create or find account for this email user
-        const accounts = AccountStore.getAccounts();
-        let existingAccount = accounts.find(acc => acc.phoneNumber === email);
-        
-        if (!existingAccount) {
-          existingAccount = AccountStore.addAccount(email.split('@')[0], email);
+        // Create or find Firestore account for this email user
+        const existingAccounts = await getAccountsByUserId(user.uid);
+        if (existingAccounts.length === 0) {
+          // Create new Firestore account
+          await createAccount({
+            userId: user.uid,
+            name: email.split('@')[0],
+            phoneNumber: email,
+            isActive: true
+          });
         }
         
-        AccountStore.switchAccount(existingAccount.id);
+        // Also update local AccountStore
+        const localAccounts = AccountStore.getAccounts();
+        let localAccount = localAccounts.find(acc => acc.phoneNumber === email);
+        
+        if (!localAccount) {
+          localAccount = AccountStore.addAccount(email.split('@')[0], email);
+        }
+        
+        AccountStore.switchAccount(localAccount.id);
 
         localStorage.setItem("authToken", user.uid);
         localStorage.setItem("firebaseUserId", user.uid);
