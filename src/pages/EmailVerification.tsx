@@ -6,6 +6,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { auth } from "@/lib/firebase";
 import { sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
+import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
+import { AccountStore } from "@/lib/accountStore";
 
 const EmailVerification = () => {
   const [loading, setLoading] = useState(false);
@@ -13,6 +15,35 @@ const EmailVerification = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const email = location.state?.email || "";
+
+  const createFirestoreAccount = async (userId: string, userEmail: string) => {
+    try {
+      // Check if account already exists
+      const existingAccounts = await getAccountsByUserId(userId);
+      if (existingAccounts.length > 0) {
+        // Account exists, use it
+        const account = existingAccounts[0];
+        if (account.id) {
+          AccountStore.switchAccount(account.id);
+        }
+        return;
+      }
+
+      // Create new account in Firestore
+      const accountId = await createAccount({
+        userId: userId,
+        name: userEmail.split('@')[0],
+        phoneNumber: userEmail,
+        isActive: true
+      });
+
+      // Also add to local AccountStore
+      const localAccount = AccountStore.addAccount(userEmail.split('@')[0], userEmail);
+      AccountStore.switchAccount(localAccount.id);
+    } catch (error) {
+      console.error("Error creating Firestore account:", error);
+    }
+  };
 
   useEffect(() => {
     // Check verification status periodically
@@ -22,6 +53,10 @@ const EmailVerification = () => {
         if (auth.currentUser.emailVerified) {
           localStorage.setItem("authToken", auth.currentUser.uid);
           localStorage.setItem("firebaseUserId", auth.currentUser.uid);
+          
+          // Create Firestore account
+          await createFirestoreAccount(auth.currentUser.uid, auth.currentUser.email || email);
+          
           toast.success("Email verified successfully!");
           navigate("/chats");
         }
@@ -29,7 +64,7 @@ const EmailVerification = () => {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, [navigate, email]);
 
   const handleResendEmail = async () => {
     if (!auth.currentUser) {
@@ -64,6 +99,10 @@ const EmailVerification = () => {
       if (auth.currentUser.emailVerified) {
         localStorage.setItem("authToken", auth.currentUser.uid);
         localStorage.setItem("firebaseUserId", auth.currentUser.uid);
+        
+        // Create Firestore account
+        await createFirestoreAccount(auth.currentUser.uid, auth.currentUser.email || email);
+        
         toast.success("Email verified!");
         navigate("/chats");
       } else {
