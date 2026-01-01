@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { verifyOTP } from "@/lib/firebaseAuth";
-import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
+import { createAccount, getAccountsByoderId } from "@/lib/firestoreService";
 import { toast } from "sonner";
 
 const OTP = () => {
@@ -48,13 +48,16 @@ const OTP = () => {
       
       if (user) {
         // Check if user already has an account
-        const existingAccounts = await getAccountsByUserId(user.uid);
+        const existingAccounts = await getAccountsByoderId(user.uid);
         
         if (existingAccounts.length === 0) {
           // Create default account for new user
           const phoneNumber = localStorage.getItem('pendingPhoneNumber') || user.phoneNumber || '';
+          const defaultUsername = `user${Date.now().toString().slice(-8)}`;
+          
           await createAccount({
-            userId: user.uid,
+            oderId: user.uid,
+            username: defaultUsername,
             name: 'Primary Account',
             phoneNumber: phoneNumber,
             isActive: true
@@ -68,13 +71,18 @@ const OTP = () => {
         toast.success("Successfully verified!");
         window.location.href = '/chats';
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Verification error:', error);
       
-      if (error.code === 'auth/invalid-verification-code') {
-        setError("Invalid verification code. Please try again.");
-      } else if (error.code === 'auth/code-expired') {
-        setError("Code expired. Please request a new one.");
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/invalid-verification-code') {
+          setError("Invalid verification code. Please try again.");
+        } else if (firebaseError.code === 'auth/code-expired') {
+          setError("Code expired. Please request a new one.");
+        } else {
+          setError("Verification failed. Please try again.");
+        }
       } else {
         setError("Verification failed. Please try again.");
       }

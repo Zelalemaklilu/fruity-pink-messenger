@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
-import { getAccountsByUserId, updateAccount, Account } from "@/lib/firestoreService";
+import { getAccountsByoderId, updateAccount, isUsernameUnique, Account } from "@/lib/firestoreService";
 import { auth } from "@/lib/firebase";
 
 const Profile = () => {
@@ -23,6 +23,7 @@ const Profile = () => {
   
   // Edit form state
   const [editName, setEditName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
 
@@ -32,16 +33,17 @@ const Profile = () => {
 
   const loadAccount = async () => {
     setLoading(true);
-    const userId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
-    if (userId) {
+    const oderId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
+    if (oderId) {
       try {
-        const accounts = await getAccountsByUserId(userId);
+        const accounts = await getAccountsByoderId(oderId);
         if (accounts.length > 0) {
           const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
           setAccount(activeAccount);
           setEditName(activeAccount.name);
+          setEditUsername(activeAccount.username || '');
           setEditBio(activeAccount.bio || "");
-          setEditAvatarUrl(activeAccount.avatarUrl || "");
+          setEditAvatarUrl(activeAccount.avatarUrl || activeAccount.photoURL || "");
         }
       } catch (error) {
         console.error("Error loading Firestore account:", error);
@@ -50,12 +52,14 @@ const Profile = () => {
         if (localAccount) {
           setAccount({
             id: localAccount.id,
-            userId: userId,
+            oderId: oderId,
+            username: localAccount.name.toLowerCase().replace(/\s/g, ''),
             name: localAccount.name,
             phoneNumber: localAccount.phoneNumber,
             isActive: true
           });
           setEditName(localAccount.name);
+          setEditUsername(localAccount.name.toLowerCase().replace(/\s/g, ''));
         }
       }
     }
@@ -73,26 +77,56 @@ const Profile = () => {
       return;
     }
 
+    if (!editUsername.trim()) {
+      toast.error("Username cannot be empty");
+      return;
+    }
+
+    if (editUsername.trim().length < 3) {
+      toast.error("Username must be at least 3 characters");
+      return;
+    }
+
     setSaving(true);
     try {
+      const normalizedUsername = editUsername.toLowerCase().trim().replace(/\s/g, '');
+      
+      // Check if username changed and if new one is unique
+      if (normalizedUsername !== account.username) {
+        const isUnique = await isUsernameUnique(normalizedUsername, account.oderId);
+        if (!isUnique) {
+          toast.error("Username already taken. Please choose another.");
+          setSaving(false);
+          return;
+        }
+      }
+
       await updateAccount(account.id, {
         name: editName.trim(),
+        username: normalizedUsername,
         bio: editBio.trim(),
-        avatarUrl: editAvatarUrl.trim()
+        avatarUrl: editAvatarUrl.trim(),
+        photoURL: editAvatarUrl.trim()
       });
 
       setAccount({
         ...account,
         name: editName.trim(),
+        username: normalizedUsername,
         bio: editBio.trim(),
-        avatarUrl: editAvatarUrl.trim()
+        avatarUrl: editAvatarUrl.trim(),
+        photoURL: editAvatarUrl.trim()
       });
 
       setEditDialogOpen(false);
       toast.success("Profile updated successfully!");
     } catch (error) {
       console.error("Error updating profile:", error);
-      toast.error("Failed to update profile");
+      if (error instanceof Error && error.message === 'Username already taken') {
+        toast.error("Username already taken. Please choose another.");
+      } else {
+        toast.error("Failed to update profile");
+      }
     } finally {
       setSaving(false);
     }
@@ -123,9 +157,10 @@ const Profile = () => {
   }
 
   const displayName = account?.name || "User";
-  const displayPhone = account?.phoneNumber || "";
+  const displayUsername = account?.username || displayName.toLowerCase().replace(/\s/g, '');
+  const displayPhone = account?.phoneNumber || account?.email || "";
   const displayBio = account?.bio || "Welcome to Zeshopp! 🚀";
-  const displayAvatar = account?.avatarUrl || "";
+  const displayAvatar = account?.avatarUrl || account?.photoURL || "";
   const isEmail = displayPhone.includes("@");
 
   return (
@@ -229,6 +264,27 @@ const Profile = () => {
                     />
                   </div>
 
+                  {/* Username Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username (unique)</Label>
+                    <div className="flex items-center">
+                      <span className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-l-lg border border-r-0 border-border h-10 flex items-center">
+                        @
+                      </span>
+                      <Input
+                        id="username"
+                        placeholder="username"
+                        value={editUsername}
+                        onChange={(e) => setEditUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                        className="rounded-l-none"
+                        maxLength={30}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Must be unique. Others can find you with this.
+                    </p>
+                  </div>
+
                   {/* Bio Input */}
                   <div className="space-y-2">
                     <Label htmlFor="bio">Bio</Label>
@@ -270,7 +326,7 @@ const Profile = () => {
       <div className="pt-20 pb-6 text-center space-y-3 px-4">
         <h2 className="text-2xl font-bold text-foreground">{displayName}</h2>
         <p className="text-muted-foreground font-medium">
-          {isEmail ? displayPhone : `@${displayName.toLowerCase().replace(/\s/g, '')}`}
+          @{displayUsername}
         </p>
         <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
           {displayBio}
@@ -320,7 +376,7 @@ const Profile = () => {
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Username</span>
-              <span className="text-foreground font-medium">@{displayName.toLowerCase().replace(/\s/g, '')}</span>
+              <span className="text-foreground font-medium">@{displayUsername}</span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Bio</span>

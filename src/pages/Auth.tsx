@@ -11,13 +11,14 @@ import { RecaptchaVerifier, sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
 import { auth } from "@/lib/firebase";
-import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
+import { createAccount, getAccountsByoderId, isUsernameUnique } from "@/lib/firestoreService";
 
 const Auth = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
   const [syncContacts, setSyncContacts] = useState(true);
@@ -54,11 +55,16 @@ const Auth = () => {
       await sendOTP(fullPhoneNumber, recaptchaVerifier);
       toast.success("Verification code sent!");
       navigate("/otp");
-    } catch (error: any) {
-      if (error.code === 'auth/invalid-phone-number') {
-        toast.error("Invalid phone number format");
-      } else if (error.code === 'auth/too-many-requests') {
-        toast.error("Too many requests. Please try again later.");
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/invalid-phone-number') {
+          toast.error("Invalid phone number format");
+        } else if (firebaseError.code === 'auth/too-many-requests') {
+          toast.error("Too many requests. Please try again later.");
+        } else {
+          toast.error("Failed to send verification code. Please try again.");
+        }
       } else {
         toast.error("Failed to send verification code. Please try again.");
       }
@@ -74,12 +80,28 @@ const Auth = () => {
     }
 
     if (isSignUp) {
+      if (!username.trim()) {
+        toast.error("Please enter a username");
+        return;
+      }
+      if (username.trim().length < 3) {
+        toast.error("Username must be at least 3 characters");
+        return;
+      }
       if (password !== confirmPassword) {
         toast.error("Passwords do not match");
         return;
       }
       if (password.length < 6) {
         toast.error("Password must be at least 6 characters");
+        return;
+      }
+
+      // Check username uniqueness before proceeding
+      const normalizedUsername = username.toLowerCase().trim().replace(/\s/g, '');
+      const isUnique = await isUsernameUnique(normalizedUsername);
+      if (!isUnique) {
+        toast.error("Username already taken. Please choose another.");
         return;
       }
     }
@@ -89,6 +111,10 @@ const Auth = () => {
     try {
       if (isSignUp) {
         const user = await signUpWithEmail(email, password);
+        
+        // Store username for later use after verification
+        localStorage.setItem('pendingUsername', username.toLowerCase().trim().replace(/\s/g, ''));
+        
         toast.success("Account created! Please verify your email.");
         navigate("/email-verification", { state: { email } });
       } else {
@@ -102,11 +128,17 @@ const Auth = () => {
         setShowResendOption(false);
         
         // Create or find Firestore account for this email user
-        const existingAccounts = await getAccountsByUserId(user.uid);
+        const existingAccounts = await getAccountsByoderId(user.uid);
         if (existingAccounts.length === 0) {
+          // Generate unique username
+          const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+          const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
+          
           // Create new Firestore account
           await createAccount({
-            userId: user.uid,
+            oderId: user.uid,
+            username: uniqueUsername,
+            email: email,
             name: email.split('@')[0],
             phoneNumber: email,
             isActive: true
@@ -129,19 +161,24 @@ const Auth = () => {
         toast.success("Signed in successfully!");
         navigate("/chats");
       }
-    } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error("Email already in use. Please sign in.");
-      } else if (error.code === 'auth/invalid-email') {
-        toast.error("Invalid email address");
-      } else if (error.code === 'auth/weak-password') {
-        toast.error("Password is too weak");
-      } else if (error.code === 'auth/user-not-found') {
-        toast.error("No account found with this email");
-      } else if (error.code === 'auth/wrong-password') {
-        toast.error("Incorrect password");
-      } else if (error.code === 'auth/invalid-credential') {
-        toast.error("Invalid email or password");
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/email-already-in-use') {
+          toast.error("Email already in use. Please sign in.");
+        } else if (firebaseError.code === 'auth/invalid-email') {
+          toast.error("Invalid email address");
+        } else if (firebaseError.code === 'auth/weak-password') {
+          toast.error("Password is too weak");
+        } else if (firebaseError.code === 'auth/user-not-found') {
+          toast.error("No account found with this email");
+        } else if (firebaseError.code === 'auth/wrong-password') {
+          toast.error("Incorrect password");
+        } else if (firebaseError.code === 'auth/invalid-credential') {
+          toast.error("Invalid email or password");
+        } else {
+          toast.error("Authentication failed. Please try again.");
+        }
       } else {
         toast.error("Authentication failed. Please try again.");
       }
@@ -160,9 +197,14 @@ const Auth = () => {
     try {
       await sendEmailVerification(auth.currentUser);
       toast.success("Verification email sent!");
-    } catch (error: any) {
-      if (error.code === 'auth/too-many-requests') {
-        toast.error("Too many requests. Please wait before trying again.");
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/too-many-requests') {
+          toast.error("Too many requests. Please wait before trying again.");
+        } else {
+          toast.error("Failed to send verification email");
+        }
       } else {
         toast.error("Failed to send verification email");
       }
@@ -219,6 +261,29 @@ const Auth = () => {
                   Sign In
                 </Button>
               </div>
+
+              {isSignUp && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Username (unique)
+                  </label>
+                  <div className="flex items-center">
+                    <span className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-l-lg border border-r-0 border-border h-10 flex items-center">
+                      @
+                    </span>
+                    <Input
+                      type="text"
+                      placeholder="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                      className="rounded-l-none"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Others can find and message you with this username.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
@@ -311,7 +376,7 @@ const Auth = () => {
 
             <Button 
               onClick={handleEmailAuth}
-              disabled={!email.trim() || !password.trim() || loading}
+              disabled={!email.trim() || !password.trim() || (isSignUp && !username.trim()) || loading}
               className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
             >
               {loading ? (
