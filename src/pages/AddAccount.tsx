@@ -4,32 +4,52 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { createAccount } from "@/lib/firestoreService";
+import { createAccount, isUsernameUnique } from "@/lib/firestoreService";
 import { toast } from "sonner";
 
 const AddAccount = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleAddAccount = async () => {
-    if (!phoneNumber.trim() || !name.trim()) return;
+    if (!phoneNumber.trim() || !name.trim() || !username.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
 
-    const userId = localStorage.getItem('firebaseUserId');
-    if (!userId) {
+    const oderId = localStorage.getItem('firebaseUserId');
+    if (!oderId) {
       toast.error("Please login first");
       navigate("/auth");
+      return;
+    }
+
+    // Validate username format
+    const normalizedUsername = username.toLowerCase().trim().replace(/\s/g, '');
+    if (normalizedUsername.length < 3) {
+      toast.error("Username must be at least 3 characters");
       return;
     }
 
     setLoading(true);
     
     try {
+      // Check username uniqueness
+      const isUnique = await isUsernameUnique(normalizedUsername);
+      if (!isUnique) {
+        toast.error("Username already taken. Please choose another.");
+        setLoading(false);
+        return;
+      }
+
       const fullPhoneNumber = `+251${phoneNumber.replace(/\s/g, '')}`;
       
       await createAccount({
-        userId,
+        oderId,
+        username: normalizedUsername,
         name: name.trim(),
         phoneNumber: fullPhoneNumber,
         isActive: false
@@ -37,9 +57,13 @@ const AddAccount = () => {
       
       toast.success(`${name} has been added successfully`);
       navigate("/settings");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error adding account:', error);
-      toast.error("Failed to add account");
+      if (error instanceof Error && error.message === 'Username already taken') {
+        toast.error("Username already taken. Please choose another.");
+      } else {
+        toast.error("Failed to add account");
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +109,27 @@ const AddAccount = () => {
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
+                Username (unique)
+              </label>
+              <div className="flex items-center">
+                <span className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-l-lg border border-r-0 border-border">
+                  @
+                </span>
+                <Input
+                  type="text"
+                  placeholder="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                  className="rounded-l-none"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Must be unique. Others can find you with this.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
                 Country
               </label>
               <div className="flex items-center space-x-2 p-3 rounded-lg border border-border bg-input">
@@ -117,7 +162,7 @@ const AddAccount = () => {
       <div className="p-6">
         <Button 
           onClick={handleAddAccount}
-          disabled={!phoneNumber.trim() || !name.trim() || loading}
+          disabled={!phoneNumber.trim() || !name.trim() || !username.trim() || loading}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
           {loading ? (

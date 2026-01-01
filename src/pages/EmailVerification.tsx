@@ -6,7 +6,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { auth } from "@/lib/firebase";
 import { sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
-import { createAccount, getAccountsByUserId } from "@/lib/firestoreService";
+import { createAccount, getAccountsByoderId } from "@/lib/firestoreService";
 import { AccountStore } from "@/lib/accountStore";
 
 const EmailVerification = () => {
@@ -16,10 +16,10 @@ const EmailVerification = () => {
   const location = useLocation();
   const email = location.state?.email || "";
 
-  const createFirestoreAccount = async (userId: string, userEmail: string) => {
+  const createFirestoreAccount = async (oderId: string, userEmail: string) => {
     try {
       // Check if account already exists
-      const existingAccounts = await getAccountsByUserId(userId);
+      const existingAccounts = await getAccountsByoderId(oderId);
       if (existingAccounts.length > 0) {
         // Account exists, use it
         const account = existingAccounts[0];
@@ -29,9 +29,15 @@ const EmailVerification = () => {
         return;
       }
 
+      // Generate unique username from email
+      const baseUsername = userEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+      const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
+
       // Create new account in Firestore
       const accountId = await createAccount({
-        userId: userId,
+        oderId: oderId,
+        username: uniqueUsername,
+        email: userEmail,
         name: userEmail.split('@')[0],
         phoneNumber: userEmail,
         isActive: true
@@ -76,9 +82,14 @@ const EmailVerification = () => {
     try {
       await sendEmailVerification(auth.currentUser);
       toast.success("Verification email sent!");
-    } catch (error: any) {
-      if (error.code === 'auth/too-many-requests') {
-        toast.error("Too many requests. Please wait before trying again.");
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/too-many-requests') {
+          toast.error("Too many requests. Please wait before trying again.");
+        } else {
+          toast.error("Failed to send verification email");
+        }
       } else {
         toast.error("Failed to send verification email");
       }
