@@ -70,17 +70,81 @@ const Settings = () => {
         return;
       }
 
-      const userAccounts = await getAccountsByUserId(userId);
+      let userAccounts = await getAccountsByUserId(userId);
+      
+      // SELF-HEALING: If no accounts found, create one automatically
+      if (userAccounts.length === 0) {
+        console.log("Settings: No account found, creating self-healing profile...");
+        const { auth } = await import("@/lib/firebase");
+        const { createAccount } = await import("@/lib/firestoreService");
+        
+        const user = auth.currentUser;
+        if (user) {
+          const emailPrefix = user.email?.split('@')[0] || 'user';
+          const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const uniqueUsername = `${baseUsername}${randomSuffix}`;
+          
+          try {
+            await createAccount({
+              oderId: userId,
+              username: uniqueUsername,
+              email: user.email || '',
+              name: `User ${emailPrefix}`,
+              phoneNumber: user.email || '',
+              isActive: true
+            });
+            console.log("Settings: Self-healing profile created:", uniqueUsername);
+            
+            // Re-fetch accounts after creation
+            userAccounts = await getAccountsByUserId(userId);
+          } catch (createError) {
+            console.error("Settings: Failed to create self-healing profile:", createError);
+            // Create a local fallback account for display
+            userAccounts = [{
+              id: 'local-temp',
+              oderId: userId,
+              username: uniqueUsername,
+              email: user.email || '',
+              name: `User ${emailPrefix}`,
+              phoneNumber: user.email || '',
+              isActive: true
+            }];
+          }
+        }
+      }
+      
       setAccounts(userAccounts);
       
       // Find active account
       const active = userAccounts.find(acc => acc.isActive);
       if (active?.id) {
         setActiveAccountId(active.id);
+      } else if (userAccounts.length > 0 && userAccounts[0].id) {
+        setActiveAccountId(userAccounts[0].id);
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      toast.error("Failed to load accounts");
+      
+      // FALLBACK: Show local temp account if Firestore fails completely
+      const userId = localStorage.getItem('firebaseUserId');
+      const { auth } = await import("@/lib/firebase");
+      const user = auth.currentUser;
+      
+      if (user && userId) {
+        const emailPrefix = user.email?.split('@')[0] || 'user';
+        const tempAccount: Account = {
+          id: 'local-fallback',
+          oderId: userId,
+          username: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, ''),
+          email: user.email || '',
+          name: `User ${emailPrefix}`,
+          phoneNumber: user.email || '',
+          isActive: true
+        };
+        setAccounts([tempAccount]);
+        setActiveAccountId('local-fallback');
+      }
     } finally {
       setLoading(false);
     }
@@ -229,8 +293,11 @@ const Settings = () => {
                   <h4 className="font-semibold text-foreground">
                     {account.name}
                   </h4>
-                  <p className="text-muted-foreground text-sm">
-                    {account.phoneNumber}
+                  <p className="text-primary text-sm font-medium">
+                    @{account.username}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {account.email || account.phoneNumber}
                   </p>
                 </div>
 
