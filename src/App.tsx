@@ -29,6 +29,8 @@ import TransactionReceipt from "./pages/TransactionReceipt";
 import TransactionDetail from "./pages/TransactionDetail";
 import AddAccount from "./pages/AddAccount";
 import NotFound from "./pages/NotFound";
+import { subscribeToAuthState } from "./lib/firebaseAuth";
+import { getAccountsByoderId, createAccount } from "./lib/firestoreService";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +40,42 @@ const AppRoutes = () => {
 
   useEffect(() => {
     setIsReady(true);
+    
+    // GLOBAL SELF-HEALING: Listen for auth state and auto-create missing profiles
+    const unsubscribe = subscribeToAuthState((user) => {
+      if (user && user.emailVerified) {
+        // Defer Firestore call to prevent deadlock
+        setTimeout(async () => {
+          try {
+            const existingAccounts = await getAccountsByoderId(user.uid);
+            
+            if (existingAccounts.length === 0) {
+              console.log("App.tsx Self-healing: Creating missing profile for:", user.uid);
+              
+              const emailPrefix = user.email?.split('@')[0] || 'user';
+              const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
+              const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+              const uniqueUsername = `${baseUsername}${randomSuffix}`;
+              
+              await createAccount({
+                oderId: user.uid,
+                username: uniqueUsername,
+                email: user.email || '',
+                name: `User ${emailPrefix}`,
+                phoneNumber: user.email || '',
+                isActive: true
+              });
+              
+              console.log("App.tsx Self-healing: Profile created with username:", uniqueUsername);
+            }
+          } catch (error) {
+            console.error("App.tsx Self-healing failed (non-blocking):", error);
+          }
+        }, 0);
+      }
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const isAuthenticated =
