@@ -131,25 +131,34 @@ const Auth = () => {
         localStorage.setItem("authToken", user.uid);
         localStorage.setItem("firebaseUserId", user.uid);
         
-        // Try to create/find Firestore account (non-blocking)
+        // SELF-HEALING PROFILE: Auto-create Firestore account if missing
         try {
           const existingAccounts = await getAccountsByoderId(user.uid);
+          
           if (existingAccounts.length === 0) {
+            // Profile is MISSING - Auto-recover by creating one
+            console.log("Self-healing: Creating missing Firestore profile for user:", user.uid);
+            
             const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-            const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
+            const randomSuffix = Math.floor(1000 + Math.random() * 9000); // 4 random digits
+            const uniqueUsername = `${baseUsername}${randomSuffix}`;
             
             await createAccount({
               oderId: user.uid,
               username: uniqueUsername,
               email: email,
-              name: email.split('@')[0],
+              name: `User ${email.split('@')[0]}`,
               phoneNumber: email,
               isActive: true
             });
+            
+            console.log("Self-healing: Profile auto-created successfully with username:", uniqueUsername);
+          } else {
+            console.log("Profile exists:", existingAccounts[0].username);
           }
         } catch (firestoreError) {
-          console.error("Firestore account creation (non-blocking):", firestoreError);
-          // Continue anyway - user is authenticated
+          // Log error but DON'T block sign-in - user is authenticated
+          console.error("Self-healing profile creation failed (non-blocking):", firestoreError);
         }
         
         // Update local AccountStore
