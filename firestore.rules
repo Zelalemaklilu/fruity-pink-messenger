@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+    // 1. ACCOUNTS: Public Read (For Username Check & Search), Owner Write
+    match /accounts/{userId} {
+      allow read: if true; 
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 2. CHATS: Strictly Restricted to Participants
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+    }
+
+    // 3. MESSAGES: Restricted to authenticated users (and ideally participants)
+    match /messages/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+
+  }
+
+}
