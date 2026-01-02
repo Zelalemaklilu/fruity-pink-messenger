@@ -127,25 +127,32 @@ const Auth = () => {
         
         setShowResendOption(false);
         
-        // Create or find Firestore account for this email user
-        const existingAccounts = await getAccountsByoderId(user.uid);
-        if (existingAccounts.length === 0) {
-          // Generate unique username
-          const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-          const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
-          
-          // Create new Firestore account
-          await createAccount({
-            oderId: user.uid,
-            username: uniqueUsername,
-            email: email,
-            name: email.split('@')[0],
-            phoneNumber: email,
-            isActive: true
-          });
+        // Set auth tokens first - this is the critical part
+        localStorage.setItem("authToken", user.uid);
+        localStorage.setItem("firebaseUserId", user.uid);
+        
+        // Try to create/find Firestore account (non-blocking)
+        try {
+          const existingAccounts = await getAccountsByoderId(user.uid);
+          if (existingAccounts.length === 0) {
+            const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+            const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
+            
+            await createAccount({
+              oderId: user.uid,
+              username: uniqueUsername,
+              email: email,
+              name: email.split('@')[0],
+              phoneNumber: email,
+              isActive: true
+            });
+          }
+        } catch (firestoreError) {
+          console.error("Firestore account creation (non-blocking):", firestoreError);
+          // Continue anyway - user is authenticated
         }
         
-        // Also update local AccountStore
+        // Update local AccountStore
         const localAccounts = AccountStore.getAccounts();
         let localAccount = localAccounts.find(acc => acc.phoneNumber === email);
         
@@ -154,9 +161,6 @@ const Auth = () => {
         }
         
         AccountStore.switchAccount(localAccount.id);
-
-        localStorage.setItem("authToken", user.uid);
-        localStorage.setItem("firebaseUserId", user.uid);
 
         toast.success("Signed in successfully!");
         navigate("/chats");
