@@ -73,6 +73,8 @@ export interface Chat {
 export const accountsCollection = collection(db, 'accounts');
 
 // Check if username is unique (excluding current user)
+// PRODUCTION: With public read enabled, this query should succeed.
+// Safety fallback: If query fails (network issue), return true to not block signup.
 export const isUsernameUnique = async (username: string, currentoderId?: string): Promise<boolean> => {
   const normalizedUsername = username.toLowerCase().trim();
   const q = query(accountsCollection, where('username', '==', normalizedUsername));
@@ -87,9 +89,11 @@ export const isUsernameUnique = async (username: string, currentoderId?: string)
     }
     return false;
   } catch (error: unknown) {
-    console.error("Error checking username uniqueness:", error);
+    // PRODUCTION FALLBACK: Log error but allow signup attempt
+    // Better to let user try signup than falsely block with "Username Taken"
+    console.error("Error checking username uniqueness (allowing signup):", error);
     logIndexError(error);
-    return false;
+    return true; // Return true to allow signup attempt
   }
 };
 
