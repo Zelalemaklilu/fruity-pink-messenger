@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
-import { getAccountsByoderId, updateAccount, isUsernameUnique, Account } from "@/lib/firestoreService";
+import { getAccountsByoderId, updateAccount, isUsernameUnique, createAccount, Account } from "@/lib/firestoreService";
 import { auth } from "@/lib/firebase";
 
 const Profile = () => {
@@ -34,9 +34,46 @@ const Profile = () => {
   const loadAccount = async () => {
     setLoading(true);
     const oderId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
+    
     if (oderId) {
       try {
-        const accounts = await getAccountsByoderId(oderId);
+        let accounts = await getAccountsByoderId(oderId);
+        
+        // SELF-HEALING: Create profile if missing
+        if (accounts.length === 0 && auth.currentUser) {
+          console.log("Profile: No account found, creating self-healing profile...");
+          const user = auth.currentUser;
+          const emailPrefix = user.email?.split('@')[0] || 'user';
+          const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+          const uniqueUsername = `${baseUsername}${randomSuffix}`;
+          
+          try {
+            await createAccount({
+              oderId: oderId,
+              username: uniqueUsername,
+              email: user.email || '',
+              name: `User ${emailPrefix}`,
+              phoneNumber: user.email || '',
+              isActive: true
+            });
+            console.log("Profile: Self-healing profile created:", uniqueUsername);
+            accounts = await getAccountsByoderId(oderId);
+          } catch (createError) {
+            console.error("Profile: Self-healing failed:", createError);
+            // Create local fallback
+            accounts = [{
+              id: 'local-temp',
+              oderId: oderId,
+              username: uniqueUsername,
+              email: user.email || '',
+              name: `User ${emailPrefix}`,
+              phoneNumber: user.email || '',
+              isActive: true
+            }];
+          }
+        }
+        
         if (accounts.length > 0) {
           const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
           setAccount(activeAccount);
@@ -47,19 +84,24 @@ const Profile = () => {
         }
       } catch (error) {
         console.error("Error loading Firestore account:", error);
-        // Fallback to local AccountStore
-        const localAccount = AccountStore.getActiveAccount();
-        if (localAccount) {
-          setAccount({
-            id: localAccount.id,
+        // Fallback using auth user data
+        const user = auth.currentUser;
+        if (user) {
+          const emailPrefix = user.email?.split('@')[0] || 'user';
+          const fallbackAccount: Account = {
+            id: 'local-fallback',
             oderId: oderId,
-            username: localAccount.name.toLowerCase().replace(/\s/g, ''),
-            name: localAccount.name,
-            phoneNumber: localAccount.phoneNumber,
+            username: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, ''),
+            email: user.email || '',
+            name: `User ${emailPrefix}`,
+            phoneNumber: user.email || '',
             isActive: true
-          });
-          setEditName(localAccount.name);
-          setEditUsername(localAccount.name.toLowerCase().replace(/\s/g, ''));
+          };
+          setAccount(fallbackAccount);
+          setEditName(fallbackAccount.name);
+          setEditUsername(fallbackAccount.username);
+          setEditBio("");
+          setEditAvatarUrl("");
         }
       }
     }
