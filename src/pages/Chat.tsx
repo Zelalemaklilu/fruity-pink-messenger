@@ -51,63 +51,118 @@ const Chat = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [chatInfo, setChatInfo] = useState<FirestoreChat | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { chatId } = useParams();
   const virtuosoRef = useRef<any>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const currentoderId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId") || "";
+  
+  // Get current user ID - prefer auth.currentUser, fallback to localStorage
+  const getCurrentUserId = useCallback(() => {
+    return auth.currentUser?.uid || localStorage.getItem("firebaseUserId") || "";
+  }, []);
 
   // Get other participant's name
   const getOtherParticipantName = useCallback(() => {
     if (!chatInfo) return "Chat";
-    const idx = chatInfo.participants?.indexOf(currentoderId);
+    const currentUserId = getCurrentUserId();
+    const idx = chatInfo.participants?.indexOf(currentUserId);
     if (idx === -1 || idx === undefined) return chatInfo.participantNames?.[0] || "Chat";
     const otherIdx = idx === 0 ? 1 : 0;
     return chatInfo.participantNames?.[otherIdx] || "Chat";
-  }, [chatInfo, currentoderId]);
+  }, [chatInfo, getCurrentUserId]);
 
   const getOtherParticipantAvatar = useCallback(() => {
     if (!chatInfo) return "";
-    const idx = chatInfo.participants?.indexOf(currentoderId);
+    const currentUserId = getCurrentUserId();
+    const idx = chatInfo.participants?.indexOf(currentUserId);
     if (idx === -1 || idx === undefined) return chatInfo.participantAvatars?.[0] || "";
     const otherIdx = idx === 0 ? 1 : 0;
     return chatInfo.participantAvatars?.[otherIdx] || "";
-  }, [chatInfo, currentoderId]);
+  }, [chatInfo, getCurrentUserId]);
 
   const getOtherParticipantId = useCallback(() => {
     if (!chatInfo) return "";
-    const idx = chatInfo.participants?.indexOf(currentoderId);
+    const currentUserId = getCurrentUserId();
+    const idx = chatInfo.participants?.indexOf(currentUserId);
     if (idx === -1 || idx === undefined) return chatInfo.participants?.[0] || "";
     const otherIdx = idx === 0 ? 1 : 0;
     return chatInfo.participants?.[otherIdx] || "";
-  }, [chatInfo, currentoderId]);
+  }, [chatInfo, getCurrentUserId]);
 
   // Load chat info and reset unread count
   useEffect(() => {
+    let isMounted = true;
+    
     const loadChatInfo = async () => {
-      if (!chatId) return;
-      const chat = await getChatById(chatId);
-      setChatInfo(chat);
+      if (!chatId) {
+        setChatError("No chat ID provided");
+        setLoading(false);
+        return;
+      }
       
-      // Reset unread count when opening chat
-      if (currentoderId) {
-        await resetUnreadCount(chatId, currentoderId);
+      const currentUserId = getCurrentUserId();
+      if (!currentUserId) {
+        setChatError("Not authenticated");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const chat = await getChatById(chatId);
+        
+        if (!isMounted) return;
+        
+        if (!chat) {
+          setChatError("Chat not found");
+          setLoading(false);
+          return;
+        }
+        
+        // Verify user is a participant
+        if (!chat.participants?.includes(currentUserId)) {
+          setChatError("You don't have access to this chat");
+          setLoading(false);
+          return;
+        }
+        
+        setChatInfo(chat);
+        setChatError(null);
+        
+        // Reset unread count when opening chat (non-blocking)
+        resetUnreadCount(chatId, currentUserId).catch(err => {
+          console.warn("Failed to reset unread count:", err);
+        });
+      } catch (error) {
+        console.error("Error loading chat:", error);
+        if (isMounted) {
+          setChatError("Failed to load chat");
+          setLoading(false);
+        }
       }
     };
+    
     loadChatInfo();
-  }, [chatId, currentoderId]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [chatId, getCurrentUserId]);
 
   // Subscribe to real-time messages
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || chatError) return;
+    
+    const currentUserId = getCurrentUserId();
+    if (!currentUserId) return;
 
     const unsubscribe = subscribeToMessages(chatId, (firestoreMessages) => {
       const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => ({
         id: msg.id || msg.tempId || "",
         text: msg.content,
         timestamp: formatTime(msg.createdAt),
-        isOwn: msg.senderId === currentoderId,
+        isOwn: msg.senderId === currentUserId,
         status: msg.status,
         type: msg.type,
         mediaUrl: msg.type === 'image' || msg.type === 'file' ? msg.content : undefined,
@@ -123,10 +178,28 @@ const Chat = () => {
     });
 
     return () => unsubscribe();
-  }, [chatId, currentoderId]);
+  }, [chatId, chatError, getCurrentUserId]);
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !chatId || !currentoderId) return;
+    const currentUserId = getCurrentUserId();
+    
+    if (!newMessage.trim() || !chatId || !currentUserId) {
+      if (!currentUserId) {
+        toast.error("Not authenticated. Please log in again.");
+      }
+      return;
+    }
+    
+    // Verify chat exists and user is participant
+    if (!chatInfo) {
+      toast.error("Chat not loaded. Please refresh.");
+      return;
+    }
+    
+    if (!chatInfo.participants?.includes(currentUserId)) {
+      toast.error("You don't have access to this chat");
+      return;
+    }
 
     const messageText = newMessage.trim();
     const tempId = `temp_${Date.now()}`;
@@ -145,9 +218,9 @@ const Chat = () => {
 
     try {
       await sendMessage({
-        accountId: currentoderId,
+        accountId: currentUserId,
         chatId: chatId,
-        senderId: currentoderId,
+        senderId: currentUserId,
         receiverId: receiverId,
         content: messageText,
         type: "text",
@@ -155,20 +228,31 @@ const Chat = () => {
         tempId: tempId
       });
 
-      // Update chat's last message and increment unread for recipient
-      await updateChat(chatId, {
+      // Update chat's last message (non-blocking)
+      updateChat(chatId, {
         lastMessage: messageText,
         lastMessageTimestamp: serverTimestamp() as Timestamp,
         lastMessageAt: serverTimestamp() as Timestamp
-      });
+      }).catch(err => console.warn("Failed to update chat metadata:", err));
 
-      // Increment unread count for recipient
+      // Increment unread count for recipient (non-blocking)
       if (receiverId) {
-        await incrementUnreadCount(chatId, receiverId);
+        incrementUnreadCount(chatId, receiverId).catch(err => 
+          console.warn("Failed to increment unread count:", err)
+        );
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      toast.error("Failed to send message");
+      
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      
+      // Show specific error message
+      if (error instanceof Error && error.message.includes('permission')) {
+        toast.error("Permission denied. Please refresh the page.");
+      } else {
+        toast.error("Failed to send message. Please try again.");
+      }
     }
   };
 
@@ -181,7 +265,12 @@ const Chat = () => {
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !chatId || !currentoderId) return;
+    const currentUserId = getCurrentUserId();
+    
+    if (!file || !chatId || !currentUserId) {
+      if (!currentUserId) toast.error("Not authenticated");
+      return;
+    }
 
     const validation = validateFile(file, { 
       maxSize: 5 * 1024 * 1024, 
@@ -205,23 +294,25 @@ const Chat = () => {
       const receiverId = getOtherParticipantId();
 
       await sendMessage({
-        accountId: currentoderId,
+        accountId: currentUserId,
         chatId: chatId,
-        senderId: currentoderId,
+        senderId: currentUserId,
         receiverId: receiverId,
         content: result.url,
         type: "image",
         status: "sent"
       });
 
-      await updateChat(chatId, {
+      updateChat(chatId, {
         lastMessage: "📷 Photo",
         lastMessageTimestamp: serverTimestamp() as Timestamp,
         lastMessageAt: serverTimestamp() as Timestamp
-      });
+      }).catch(err => console.warn("Failed to update chat:", err));
 
       if (receiverId) {
-        await incrementUnreadCount(chatId, receiverId);
+        incrementUnreadCount(chatId, receiverId).catch(err => 
+          console.warn("Failed to increment unread:", err)
+        );
       }
 
       toast.success("Image sent!");
@@ -237,7 +328,12 @@ const Chat = () => {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !chatId || !currentoderId) return;
+    const currentUserId = getCurrentUserId();
+    
+    if (!file || !chatId || !currentUserId) {
+      if (!currentUserId) toast.error("Not authenticated");
+      return;
+    }
 
     const validation = validateFile(file, { maxSize: 10 * 1024 * 1024 });
     if (!validation.valid) {
@@ -256,9 +352,9 @@ const Chat = () => {
       const receiverId = getOtherParticipantId();
 
       await sendMessage({
-        accountId: currentoderId,
+        accountId: currentUserId,
         chatId: chatId,
-        senderId: currentoderId,
+        senderId: currentUserId,
         receiverId: receiverId,
         content: result.url,
         type: "file",
@@ -266,14 +362,16 @@ const Chat = () => {
         fileName: file.name
       });
 
-      await updateChat(chatId, {
+      updateChat(chatId, {
         lastMessage: `📎 ${file.name}`,
         lastMessageTimestamp: serverTimestamp() as Timestamp,
         lastMessageAt: serverTimestamp() as Timestamp
-      });
+      }).catch(err => console.warn("Failed to update chat:", err));
 
       if (receiverId) {
-        await incrementUnreadCount(chatId, receiverId);
+        incrementUnreadCount(chatId, receiverId).catch(err => 
+          console.warn("Failed to increment unread:", err)
+        );
       }
 
       toast.success("File sent!");
@@ -289,6 +387,28 @@ const Chat = () => {
 
   const chatName = getOtherParticipantName();
   const chatAvatar = getOtherParticipantAvatar();
+
+  // Show error state
+  if (chatError) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border p-4 z-10">
+          <div className="flex items-center space-x-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate("/chats")}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h2 className="font-semibold text-foreground">Error</h2>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-4">
+            <p className="text-muted-foreground">{chatError}</p>
+            <Button onClick={() => navigate("/chats")}>Back to Chats</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
