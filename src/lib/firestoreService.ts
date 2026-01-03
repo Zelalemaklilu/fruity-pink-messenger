@@ -374,7 +374,8 @@ export const getChatsByAccountId = getChatsByoderId;
 // Real-time chat listener
 export const subscribeToChats = (
   oderId: string,
-  callback: (chats: Chat[]) => void
+  callback: (chats: Chat[]) => void,
+  onError?: (error: Error) => void
 ): (() => void) => {
   const q = query(
     chatsCollection,
@@ -393,6 +394,10 @@ export const subscribeToChats = (
   }, (error) => {
     console.error("Error in chat subscription:", error);
     logIndexError(error);
+    // Call error callback to stop loading spinner
+    onError?.(error);
+    // Return empty chats on error so UI doesn't freeze
+    callback([]);
   });
 };
 

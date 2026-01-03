@@ -58,40 +58,51 @@ const Chats = () => {
       return;
     }
 
-    const unsubscribe = subscribeToChats(currentoderId, (firestoreChats) => {
-      const displayChats: ChatDisplay[] = firestoreChats.map((chat: FirestoreChat) => {
-        // Find the other participant's info
-        const idx = chat.participants?.indexOf(currentoderId) ?? -1;
-        const otherIdx = idx === 0 ? 1 : 0;
-        
-        const name = chat.isGroup 
-          ? (chat.groupName || "Group") 
-          : (chat.participantNames?.[otherIdx] || "Unknown");
-        
-        const avatar = chat.participantAvatars?.[otherIdx] || "";
-        const unreadCount = chat.unreadCount?.[currentoderId] || 0;
+    let isMounted = true;
 
-        return {
-          id: chat.id || "",
-          name,
-          lastMessage: chat.lastMessage || "No messages yet",
-          timestamp: formatTimestamp(chat.lastMessageTimestamp || chat.lastMessageAt),
-          unreadCount,
-          avatar,
-          status: "offline" as const
-        };
-      });
-      
-      setChats(displayChats);
-      
-      // Calculate total unread
-      const total = displayChats.reduce((sum, chat) => sum + chat.unreadCount, 0);
-      setTotalUnread(total);
-      
-      setLoading(false);
-    });
+    const unsubscribe = subscribeToChats(
+      currentoderId, 
+      (firestoreChats) => {
+        if (!isMounted) return;
+        
+        const displayChats: ChatDisplay[] = firestoreChats.map((chat: FirestoreChat) => {
+          const idx = chat.participants?.indexOf(currentoderId) ?? -1;
+          const otherIdx = idx === 0 ? 1 : 0;
+          
+          const name = chat.isGroup 
+            ? (chat.groupName || "Group") 
+            : (chat.participantNames?.[otherIdx] || "Unknown");
+          
+          const avatar = chat.participantAvatars?.[otherIdx] || "";
+          const unreadCount = chat.unreadCount?.[currentoderId] || 0;
 
-    return () => unsubscribe();
+          return {
+            id: chat.id || "",
+            name,
+            lastMessage: chat.lastMessage || "No messages yet",
+            timestamp: formatTimestamp(chat.lastMessageTimestamp || chat.lastMessageAt),
+            unreadCount,
+            avatar,
+            status: "offline" as const
+          };
+        });
+        
+        setChats(displayChats);
+        setTotalUnread(displayChats.reduce((sum, chat) => sum + chat.unreadCount, 0));
+        setLoading(false);
+      },
+      // Error callback - stop loading on error
+      () => {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [currentoderId]);
 
   // Filter chats locally
