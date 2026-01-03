@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
 import OTP from "./pages/OTP";
@@ -35,17 +35,25 @@ import { getAccountsByoderId, createAccount } from "./lib/firestoreService";
 const queryClient = new QueryClient();
 
 const AppRoutes = () => {
-  const [isReady, setIsReady] = useState(false);
+  const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  const [profileReady, setProfileReady] = useState(false);
   const location = useLocation();
+  
+  // Track if self-healing has been attempted to prevent loops
+  const selfHealingAttempted = useRef<string | null>(null);
 
   useEffect(() => {
-    setIsReady(true);
-    
-    // GLOBAL SELF-HEALING: Listen for auth state and auto-create missing profiles
-    const unsubscribe = subscribeToAuthState((user) => {
+    const unsubscribe = subscribeToAuthState(async (user) => {
       if (user && user.emailVerified) {
-        // Defer Firestore call to prevent deadlock
-        setTimeout(async () => {
+        // Set auth state immediately
+        setAuthState('authenticated');
+        localStorage.setItem("authToken", user.uid);
+        localStorage.setItem("firebaseUserId", user.uid);
+        
+        // Only attempt self-healing ONCE per user session
+        if (selfHealingAttempted.current !== user.uid) {
+          selfHealingAttempted.current = user.uid;
+          
           try {
             const existingAccounts = await getAccountsByoderId(user.uid);
             
@@ -71,17 +79,29 @@ const AppRoutes = () => {
           } catch (error) {
             console.error("App.tsx Self-healing failed (non-blocking):", error);
           }
-        }, 0);
+        }
+        
+        setProfileReady(true);
+      } else if (user && !user.emailVerified) {
+        // User exists but email not verified
+        setAuthState('unauthenticated');
+        setProfileReady(false);
+        localStorage.removeItem("authToken");
+      } else {
+        // No user
+        setAuthState('unauthenticated');
+        setProfileReady(false);
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("firebaseUserId");
+        selfHealingAttempted.current = null;
       }
     });
     
     return () => unsubscribe();
   }, []);
 
-  const isAuthenticated =
-    typeof window !== "undefined" && !!localStorage.getItem("authToken");
-
-  if (!isReady) {
+  // Show loading screen while checking auth
+  if (authState === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
         <div className="text-center space-y-6 animate-in fade-in-0 duration-1000">
@@ -109,6 +129,8 @@ const AppRoutes = () => {
       </div>
     );
   }
+
+  const isAuthenticated = authState === 'authenticated' && profileReady;
 
   return (
     <Routes location={location}>
