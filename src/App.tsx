@@ -32,6 +32,7 @@ import AddAccount from "./pages/AddAccount";
 import NotFound from "./pages/NotFound";
 import { subscribeToAuthState } from "./lib/firebaseAuth";
 import { getAccountsByoderId, createAccount } from "./lib/firestoreService";
+import logoImage from "@/assets/zeshopp-logo.jpg";
 
 const queryClient = new QueryClient();
 
@@ -48,29 +49,12 @@ const AppRoutes = () => {
 
   const isAuthenticated = authState === 'authenticated' && profileReady;
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    // Toast only once per authenticated session
-    if (!loginToastShownRef.current) {
-      toast.success("Login successful");
-      loginToastShownRef.current = true;
-    }
-
-    // Redirect to /chats only once, and never if we're already there
-    if (redirectToChatsDoneRef.current) return;
-    if (location.pathname === "/chats") return;
-
-    const publicPaths = new Set(["/", "/auth", "/otp", "/email-verification", "/forgot-password"]);
-    if (publicPaths.has(location.pathname)) {
-      redirectToChatsDoneRef.current = true;
-      navigate("/chats", { replace: true });
-    }
-  }, [isAuthenticated, location.pathname, navigate]);
-
+  // ─────────────────────────────────────────────────────────────────────────────
+  // HOOK 1: Auth state subscription (Firebase listener)
+  // ─────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const unsubscribe = subscribeToAuthState(async (user) => {
-      // Ensure emailVerified is up-to-date (verification changes do not always trigger a fresh auth event)
+      // Ensure emailVerified is up-to-date
       if (user) {
         try {
           await user.reload();
@@ -80,7 +64,6 @@ const AppRoutes = () => {
       }
 
       if (user && user.emailVerified) {
-        // Set auth state immediately
         setAuthState('authenticated');
         setProfileReady(false);
         localStorage.setItem("authToken", user.uid);
@@ -119,21 +102,17 @@ const AppRoutes = () => {
         
         setProfileReady(true);
       } else if (user && !user.emailVerified) {
-        // User exists but email not verified
         setAuthState('unauthenticated');
         setProfileReady(false);
         localStorage.removeItem("authToken");
-
         loginToastShownRef.current = false;
         redirectToChatsDoneRef.current = false;
       } else {
-        // No user
         setAuthState('unauthenticated');
         setProfileReady(false);
         localStorage.removeItem("authToken");
         localStorage.removeItem("firebaseUserId");
         selfHealingAttempted.current = null;
-
         loginToastShownRef.current = false;
         redirectToChatsDoneRef.current = false;
       }
@@ -142,14 +121,44 @@ const AppRoutes = () => {
     return () => unsubscribe();
   }, []);
 
-  // Show loading screen while checking auth
+  // ─────────────────────────────────────────────────────────────────────────────
+  // HOOK 2: Post-login toast & redirect (runs AFTER auth state settles)
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Toast only once per authenticated session
+    if (!loginToastShownRef.current) {
+      toast.success("Login successful");
+      loginToastShownRef.current = true;
+    }
+
+    // Redirect to /chats only once, and never if we're already there
+    if (redirectToChatsDoneRef.current) return;
+    if (location.pathname === "/chats") {
+      redirectToChatsDoneRef.current = true;
+      return;
+    }
+
+    const publicPaths = new Set(["/", "/auth", "/otp", "/email-verification", "/forgot-password"]);
+    if (publicPaths.has(location.pathname)) {
+      redirectToChatsDoneRef.current = true;
+      navigate("/chats", { replace: true });
+    }
+  }, [isAuthenticated, location.pathname, navigate]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER: Loading states (shown AFTER all hooks have been declared)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Loading screen while checking auth
   if (authState === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
         <div className="text-center space-y-6 animate-in fade-in-0 duration-1000">
           <div className="relative mx-auto w-32 h-32 rounded-3xl overflow-hidden shadow-primary">
             <img 
-              src="/src/assets/zeshopp-logo.jpg" 
+              src={logoImage} 
               alt="Zeshopp Logo" 
               className="w-full h-full object-cover"
             />
@@ -172,7 +181,7 @@ const AppRoutes = () => {
     );
   }
 
-  // Show a stable screen while we prepare / self-heal the profile (prevents redirect flicker)
+  // Preparing account screen (self-healing in progress)
   if (authState === 'authenticated' && !profileReady) {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
