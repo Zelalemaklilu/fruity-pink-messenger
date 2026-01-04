@@ -2,8 +2,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
+import { toast } from "sonner";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
 import OTP from "./pages/OTP";
@@ -38,15 +39,50 @@ const AppRoutes = () => {
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
   const [profileReady, setProfileReady] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   
   // Track if self-healing has been attempted to prevent loops
   const selfHealingAttempted = useRef<string | null>(null);
+  const loginToastShownRef = useRef(false);
+  const redirectToChatsDoneRef = useRef(false);
+
+  const isAuthenticated = authState === 'authenticated' && profileReady;
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Toast only once per authenticated session
+    if (!loginToastShownRef.current) {
+      toast.success("Login successful");
+      loginToastShownRef.current = true;
+    }
+
+    // Redirect to /chats only once, and never if we're already there
+    if (redirectToChatsDoneRef.current) return;
+    if (location.pathname === "/chats") return;
+
+    const publicPaths = new Set(["/", "/auth", "/otp", "/email-verification", "/forgot-password"]);
+    if (publicPaths.has(location.pathname)) {
+      redirectToChatsDoneRef.current = true;
+      navigate("/chats", { replace: true });
+    }
+  }, [isAuthenticated, location.pathname, navigate]);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthState(async (user) => {
+      // Ensure emailVerified is up-to-date (verification changes do not always trigger a fresh auth event)
+      if (user) {
+        try {
+          await user.reload();
+        } catch (e) {
+          console.warn("App.tsx: user.reload() failed (non-blocking):", e);
+        }
+      }
+
       if (user && user.emailVerified) {
         // Set auth state immediately
         setAuthState('authenticated');
+        setProfileReady(false);
         localStorage.setItem("authToken", user.uid);
         localStorage.setItem("firebaseUserId", user.uid);
         
@@ -87,6 +123,9 @@ const AppRoutes = () => {
         setAuthState('unauthenticated');
         setProfileReady(false);
         localStorage.removeItem("authToken");
+
+        loginToastShownRef.current = false;
+        redirectToChatsDoneRef.current = false;
       } else {
         // No user
         setAuthState('unauthenticated');
@@ -94,6 +133,9 @@ const AppRoutes = () => {
         localStorage.removeItem("authToken");
         localStorage.removeItem("firebaseUserId");
         selfHealingAttempted.current = null;
+
+        loginToastShownRef.current = false;
+        redirectToChatsDoneRef.current = false;
       }
     });
     
@@ -130,7 +172,22 @@ const AppRoutes = () => {
     );
   }
 
-  const isAuthenticated = authState === 'authenticated' && profileReady;
+  // Show a stable screen while we prepare / self-heal the profile (prevents redirect flicker)
+  if (authState === 'authenticated' && !profileReady) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
+        <div className="text-center space-y-4 animate-in fade-in-0 duration-500">
+          <div className="w-16 h-16 rounded-2xl bg-background/40 border border-border/40 shadow-primary mx-auto flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-foreground">Preparing your account</h1>
+            <p className="text-sm text-muted-foreground">Just a moment…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes location={location}>
