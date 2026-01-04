@@ -74,6 +74,8 @@ const Auth = () => {
   };
 
   const handleEmailAuth = async () => {
+    if (loading) return;
+
     if (!email.trim() || !password.trim()) {
       toast.error("Please enter email and password");
       return;
@@ -171,8 +173,8 @@ const Auth = () => {
         
         AccountStore.switchAccount(localAccount.id);
 
-        toast.success("Signed in successfully!");
-        navigate("/chats");
+        // Final navigation is handled via React Router (no full page reloads)
+        navigate("/chats", { replace: true });
       }
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error) {
