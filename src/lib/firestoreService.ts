@@ -97,29 +97,16 @@ export const isUsernameUnique = async (username: string, currentoderId?: string)
   }
 };
 
-// Search for user by username with prefix matching and email fallback
-export const searchByUsername = async (username: string, excludeoderId: string): Promise<Account | null> => {
-  const normalizedQuery = username.toLowerCase().trim();
+// Search for user by name with prefix matching and email fallback
+export const searchByUsername = async (searchName: string, excludeoderId: string): Promise<Account | null> => {
+  const normalizedQuery = searchName.toLowerCase().trim();
   
   try {
-    // First try exact match
-    const exactQuery = query(accountsCollection, where('username', '==', normalizedQuery));
-    const exactSnapshot = await getDocs(exactQuery);
-    
-    if (!exactSnapshot.empty) {
-      for (const docSnap of exactSnapshot.docs) {
-        const data = docSnap.data();
-        if (data.oderId !== excludeoderId) {
-          return { id: docSnap.id, ...data } as Account;
-        }
-      }
-    }
-    
-    // Try prefix match (startsWith behavior)
+    // Try prefix match on 'name' field (startsWith behavior)
     const prefixQuery = query(
       accountsCollection, 
-      where('username', '>=', normalizedQuery),
-      where('username', '<=', normalizedQuery + '\uf8ff')
+      where('name', '>=', normalizedQuery),
+      where('name', '<=', normalizedQuery + '\uf8ff')
     );
     const prefixSnapshot = await getDocs(prefixQuery);
     
@@ -147,7 +134,7 @@ export const searchByUsername = async (username: string, excludeoderId: string):
     
     return null;
   } catch (error: unknown) {
-    console.error("Error searching username:", error);
+    console.error("Error searching by name:", error);
     logIndexError(error);
     return null;
   }
@@ -159,11 +146,11 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
   const results: Account[] = [];
   
   try {
-    // Prefix match on username
+    // Prefix match on 'name' field (matches your Firestore schema)
     const prefixQuery = query(
       accountsCollection, 
-      where('username', '>=', normalizedQuery),
-      where('username', '<=', normalizedQuery + '\uf8ff'),
+      where('name', '>=', normalizedQuery),
+      where('name', '<=', normalizedQuery + '\uf8ff'),
       limit(maxResults)
     );
     const snapshot = await getDocs(prefixQuery);
@@ -172,6 +159,19 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
       const data = docSnap.data();
       if (data.oderId !== excludeoderId) {
         results.push({ id: docSnap.id, ...data } as Account);
+      }
+    }
+    
+    // If no results, try email fallback
+    if (results.length === 0) {
+      const emailQuery = query(accountsCollection, where('email', '==', normalizedQuery));
+      const emailSnapshot = await getDocs(emailQuery);
+      
+      for (const docSnap of emailSnapshot.docs) {
+        const data = docSnap.data();
+        if (data.oderId !== excludeoderId) {
+          results.push({ id: docSnap.id, ...data } as Account);
+        }
       }
     }
     
