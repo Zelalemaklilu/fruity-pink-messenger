@@ -97,26 +97,89 @@ export const isUsernameUnique = async (username: string, currentoderId?: string)
   }
 };
 
-// Search for user by exact username
+// Search for user by username with prefix matching and email fallback
 export const searchByUsername = async (username: string, excludeoderId: string): Promise<Account | null> => {
-  const normalizedUsername = username.toLowerCase().trim();
-  const q = query(accountsCollection, where('username', '==', normalizedUsername));
+  const normalizedQuery = username.toLowerCase().trim();
   
   try {
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return null;
+    // First try exact match
+    const exactQuery = query(accountsCollection, where('username', '==', normalizedQuery));
+    const exactSnapshot = await getDocs(exactQuery);
     
-    const account = snapshot.docs[0];
-    const data = account.data();
+    if (!exactSnapshot.empty) {
+      for (const docSnap of exactSnapshot.docs) {
+        const data = docSnap.data();
+        if (data.oderId !== excludeoderId) {
+          return { id: docSnap.id, ...data } as Account;
+        }
+      }
+    }
     
-    // Don't return current user
-    if (data.oderId === excludeoderId) return null;
+    // Try prefix match (startsWith behavior)
+    const prefixQuery = query(
+      accountsCollection, 
+      where('username', '>=', normalizedQuery),
+      where('username', '<=', normalizedQuery + '\uf8ff')
+    );
+    const prefixSnapshot = await getDocs(prefixQuery);
     
-    return { id: account.id, ...data } as Account;
+    if (!prefixSnapshot.empty) {
+      for (const docSnap of prefixSnapshot.docs) {
+        const data = docSnap.data();
+        if (data.oderId !== excludeoderId) {
+          return { id: docSnap.id, ...data } as Account;
+        }
+      }
+    }
+    
+    // Fallback: Try email search
+    const emailQuery = query(accountsCollection, where('email', '==', normalizedQuery));
+    const emailSnapshot = await getDocs(emailQuery);
+    
+    if (!emailSnapshot.empty) {
+      for (const docSnap of emailSnapshot.docs) {
+        const data = docSnap.data();
+        if (data.oderId !== excludeoderId) {
+          return { id: docSnap.id, ...data } as Account;
+        }
+      }
+    }
+    
+    return null;
   } catch (error: unknown) {
     console.error("Error searching username:", error);
     logIndexError(error);
     return null;
+  }
+};
+
+// Search for multiple users (for autocomplete/suggestions)
+export const searchUsers = async (searchTerm: string, excludeoderId: string, maxResults: number = 5): Promise<Account[]> => {
+  const normalizedQuery = searchTerm.toLowerCase().trim();
+  const results: Account[] = [];
+  
+  try {
+    // Prefix match on username
+    const prefixQuery = query(
+      accountsCollection, 
+      where('username', '>=', normalizedQuery),
+      where('username', '<=', normalizedQuery + '\uf8ff'),
+      limit(maxResults)
+    );
+    const snapshot = await getDocs(prefixQuery);
+    
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      if (data.oderId !== excludeoderId) {
+        results.push({ id: docSnap.id, ...data } as Account);
+      }
+    }
+    
+    return results;
+  } catch (error: unknown) {
+    console.error("Error searching users:", error);
+    logIndexError(error);
+    return [];
   }
 };
 
