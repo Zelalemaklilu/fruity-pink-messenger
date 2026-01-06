@@ -99,20 +99,26 @@ const EmailVerification = () => {
   };
 
   const handleCheckVerification = async () => {
-    if (!auth.currentUser) {
+    const user = auth.currentUser;
+    if (!user) {
       toast.error("No user found");
       return;
     }
 
     setChecking(true);
     try {
-      await auth.currentUser.reload();
-      if (auth.currentUser.emailVerified) {
-        localStorage.setItem("authToken", auth.currentUser.uid);
-        localStorage.setItem("firebaseUserId", auth.currentUser.uid);
+      // Force reload to get the latest verification status from Firebase server
+      await user.reload();
+      
+      // Get fresh reference after reload
+      const freshUser = auth.currentUser;
+      
+      if (freshUser?.emailVerified) {
+        localStorage.setItem("authToken", freshUser.uid);
+        localStorage.setItem("firebaseUserId", freshUser.uid);
         
         // Create Firestore account
-        await createFirestoreAccount(auth.currentUser.uid, auth.currentUser.email || email);
+        await createFirestoreAccount(freshUser.uid, freshUser.email || email);
         
         toast.success("Email verified!");
         navigate("/chats");
@@ -120,6 +126,7 @@ const EmailVerification = () => {
         toast.info("Email not verified yet. Please check your inbox.");
       }
     } catch (error) {
+      console.error("Verification check error:", error);
       toast.error("Failed to check verification status");
     } finally {
       setChecking(false);
