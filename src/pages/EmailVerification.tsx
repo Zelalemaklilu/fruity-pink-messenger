@@ -21,6 +21,7 @@ const EmailVerification = () => {
       // Check if account already exists
       const existingAccounts = await getAccountsByoderId(oderId);
       if (existingAccounts.length > 0) {
+        console.log("Account already exists:", existingAccounts[0].username);
         // Account exists, use it
         const account = existingAccounts[0];
         if (account.id) {
@@ -29,11 +30,14 @@ const EmailVerification = () => {
         return;
       }
 
-      // Generate unique username from email
+      // Get stored username from signup, or generate one
+      const storedUsername = localStorage.getItem('pendingUsername');
       const baseUsername = userEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-      const uniqueUsername = `${baseUsername}${Date.now().toString().slice(-4)}`;
+      const uniqueUsername = storedUsername || `${baseUsername}${Date.now().toString().slice(-4)}`;
 
-      // Create new account in Firestore
+      console.log("Creating Firestore account with username:", uniqueUsername);
+
+      // Create new account in Firestore - uses setDoc with oderId as doc ID
       const accountId = await createAccount({
         oderId: oderId,
         username: uniqueUsername,
@@ -43,11 +47,19 @@ const EmailVerification = () => {
         isActive: true
       });
 
+      console.log("Firestore account created with ID:", accountId);
+      
+      // Clear stored username
+      localStorage.removeItem('pendingUsername');
+      localStorage.removeItem('pendingEmail');
+
       // Also add to local AccountStore
       const localAccount = AccountStore.addAccount(userEmail.split('@')[0], userEmail);
       AccountStore.switchAccount(localAccount.id);
     } catch (error) {
-      console.error("Error creating Firestore account:", error);
+      console.error("Firestore Write Error:", error);
+      toast.error("Failed to create profile. Please try again.");
+      throw error; // Re-throw to handle in caller
     }
   };
 

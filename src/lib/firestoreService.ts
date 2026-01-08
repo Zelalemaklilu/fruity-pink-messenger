@@ -187,18 +187,42 @@ export const createAccount = async (account: Omit<Account, 'id' | 'createdAt' | 
   // Ensure username is lowercase and unique
   const normalizedUsername = account.username?.toLowerCase().trim() || account.name.toLowerCase().replace(/\s/g, '');
   
+  // CRITICAL: Check if account already exists for this oderId to prevent duplicates
+  if (account.oderId) {
+    try {
+      const existingAccounts = await getAccountsByoderId(account.oderId);
+      if (existingAccounts.length > 0) {
+        console.log("Account already exists for oderId:", account.oderId);
+        return existingAccounts[0].id || account.oderId;
+      }
+    } catch (error) {
+      console.error("Error checking existing account:", error);
+    }
+  }
+  
   const isUnique = await isUsernameUnique(normalizedUsername);
   if (!isUnique) {
     throw new Error('Username already taken');
   }
   
-  const docRef = await addDoc(accountsCollection, {
-    ...account,
-    username: normalizedUsername,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  });
-  return docRef.id;
+  try {
+    // Use setDoc with oderId as document ID for guaranteed uniqueness
+    const docId = account.oderId || doc(accountsCollection).id;
+    const docRef = doc(db, 'accounts', docId);
+    
+    await setDoc(docRef, {
+      ...account,
+      username: normalizedUsername,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    
+    console.log("Firestore account created successfully with ID:", docId);
+    return docId;
+  } catch (error) {
+    console.error("Firestore Write Error:", error);
+    throw new Error(`Failed to create account in Firestore: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 };
 
 export const getAccountsByoderId = async (oderId: string): Promise<Account[]> => {

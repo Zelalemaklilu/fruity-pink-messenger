@@ -74,7 +74,18 @@ const Auth = () => {
   };
 
   const handleEmailAuth = async () => {
-    if (loading) return;
+    // CRITICAL: Prevent duplicate submissions
+    if (loading) {
+      console.log("Already processing, ignoring click");
+      return;
+    }
+
+    // If user already exists in Firebase Auth, don't create another
+    if (isSignUp && auth.currentUser) {
+      console.log("User already exists in Firebase Auth, navigating to verification");
+      navigate("/email-verification", { state: { email: auth.currentUser.email } });
+      return;
+    }
 
     if (!email.trim() || !password.trim()) {
       toast.error("Please enter email and password");
@@ -108,6 +119,7 @@ const Auth = () => {
       }
     }
 
+    // Set loading IMMEDIATELY to prevent double-clicks
     setLoading(true);
 
     try {
@@ -116,6 +128,7 @@ const Auth = () => {
         
         // Store username for later use after verification
         localStorage.setItem('pendingUsername', username.toLowerCase().trim().replace(/\s/g, ''));
+        localStorage.setItem('pendingEmail', email);
         
         toast.success("Account created! Please verify your email.");
         navigate("/email-verification", { state: { email } });
