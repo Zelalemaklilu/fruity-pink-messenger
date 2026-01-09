@@ -210,6 +210,8 @@ export const createAccount = async (account: Omit<Account, 'id' | 'createdAt' | 
     const docId = account.oderId || doc(accountsCollection).id;
     const docRef = doc(db, 'accounts', docId);
     
+    console.log("Firestore: Attempting to write account with ID:", docId);
+    
     await setDoc(docRef, {
       ...account,
       username: normalizedUsername,
@@ -220,8 +222,13 @@ export const createAccount = async (account: Omit<Account, 'id' | 'createdAt' | 
     console.log("Firestore account created successfully with ID:", docId);
     return docId;
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error("Firestore Write Error:", error);
-    throw new Error(`Failed to create account in Firestore: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    
+    // CRITICAL: Show alert to user so they know the write failed
+    alert("Firestore Error: " + errorMessage);
+    
+    throw new Error(`Failed to create account in Firestore: ${errorMessage}`);
   }
 };
 
