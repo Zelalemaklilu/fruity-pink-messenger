@@ -26,6 +26,7 @@ const Auth = () => {
   const [resendLoading, setResendLoading] = useState(false);
   const [showResendOption, setShowResendOption] = useState(false);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
+  const isSubmittingRef = useRef(false); // HARD LOCK to prevent duplicate submissions
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -74,9 +75,15 @@ const Auth = () => {
   };
 
   const handleEmailAuth = async () => {
-    // CRITICAL: Prevent duplicate submissions
+    // CRITICAL: Hard lock using ref - prevents ALL duplicate submissions
+    if (isSubmittingRef.current) {
+      console.log("BLOCKED: Already submitting, ignoring click");
+      return;
+    }
+    
+    // Also check loading state
     if (loading) {
-      console.log("Already processing, ignoring click");
+      console.log("BLOCKED: Loading state active, ignoring click");
       return;
     }
 
@@ -119,8 +126,10 @@ const Auth = () => {
       }
     }
 
-    // Set loading IMMEDIATELY to prevent double-clicks
+    // HARD LOCK: Set BOTH ref and state IMMEDIATELY
+    isSubmittingRef.current = true;
     setLoading(true);
+    console.log("SIGNUP STARTED: Button locked");
 
     try {
       if (isSignUp) {
@@ -190,6 +199,10 @@ const Auth = () => {
         navigate("/chats", { replace: true });
       }
     } catch (error: unknown) {
+      // UNLOCK on error so user can retry
+      isSubmittingRef.current = false;
+      console.log("SIGNUP ERROR: Button unlocked for retry");
+      
       if (error && typeof error === 'object' && 'code' in error) {
         const firebaseError = error as { code: string };
         if (firebaseError.code === 'auth/email-already-in-use') {
@@ -210,9 +223,9 @@ const Auth = () => {
       } else {
         toast.error("Authentication failed. Please try again.");
       }
-    } finally {
       setLoading(false);
     }
+    // NOTE: We do NOT unlock on success - user navigates away
   };
 
   const handleResendVerification = async () => {
