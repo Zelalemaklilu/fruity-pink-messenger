@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
-import { initRecaptcha, sendOTP, signUpWithEmail, signInWithEmail } from "@/lib/firebaseAuth";
+import { initRecaptcha, sendOTP, atomicSignUpWithEmail, signInWithEmail } from "@/lib/firebaseAuth";
 import { RecaptchaVerifier, sendEmailVerification } from "firebase/auth";
 import { toast } from "sonner";
 import { AccountStore } from "@/lib/accountStore";
@@ -75,68 +75,76 @@ const Auth = () => {
   };
 
   const handleEmailAuth = async () => {
-    // CRITICAL: Hard lock using ref - prevents ALL duplicate submissions
+    // ===== HARD LOCK: FIRST LINE - Before ANY operations =====
     if (isSubmittingRef.current) {
       console.log("BLOCKED: Already submitting, ignoring click");
       return;
     }
     
-    // Also check loading state
-    if (loading) {
-      console.log("BLOCKED: Loading state active, ignoring click");
-      return;
-    }
-
-    // If user already exists in Firebase Auth, don't create another
-    if (isSignUp && auth.currentUser) {
-      console.log("User already exists in Firebase Auth, navigating to verification");
-      navigate("/email-verification", { state: { email: auth.currentUser.email } });
-      return;
-    }
-
-    if (!email.trim() || !password.trim()) {
-      toast.error("Please enter email and password");
-      return;
-    }
-
-    if (isSignUp) {
-      if (!username.trim()) {
-        toast.error("Please enter a username");
-        return;
-      }
-      if (username.trim().length < 3) {
-        toast.error("Username must be at least 3 characters");
-        return;
-      }
-      if (password !== confirmPassword) {
-        toast.error("Passwords do not match");
-        return;
-      }
-      if (password.length < 6) {
-        toast.error("Password must be at least 6 characters");
-        return;
-      }
-
-      // Check username uniqueness before proceeding
-      const normalizedUsername = username.toLowerCase().trim().replace(/\s/g, '');
-      const isUnique = await isUsernameUnique(normalizedUsername);
-      if (!isUnique) {
-        toast.error("Username already taken. Please choose another.");
-        return;
-      }
-    }
-
-    // HARD LOCK: Set BOTH ref and state IMMEDIATELY
+    // LOCK IMMEDIATELY - before any validation or async operations
     isSubmittingRef.current = true;
     setLoading(true);
-    console.log("SIGNUP STARTED: Button locked");
+    console.log("HARD LOCK ENGAGED: Button disabled");
 
     try {
+      // If user already exists in Firebase Auth, don't create another
+      if (isSignUp && auth.currentUser) {
+        console.log("User already exists in Firebase Auth, navigating to verification");
+        navigate("/email-verification", { state: { email: auth.currentUser.email } });
+        return;
+      }
+
+      if (!email.trim() || !password.trim()) {
+        toast.error("Please enter email and password");
+        isSubmittingRef.current = false;
+        setLoading(false);
+        return;
+      }
+
       if (isSignUp) {
-        const user = await signUpWithEmail(email, password);
+        if (!username.trim()) {
+          toast.error("Please enter a username");
+          isSubmittingRef.current = false;
+          setLoading(false);
+          return;
+        }
+        if (username.trim().length < 3) {
+          toast.error("Username must be at least 3 characters");
+          isSubmittingRef.current = false;
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          toast.error("Passwords do not match");
+          isSubmittingRef.current = false;
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          toast.error("Password must be at least 6 characters");
+          isSubmittingRef.current = false;
+          setLoading(false);
+          return;
+        }
+
+        // Check username uniqueness before proceeding
+        const normalizedUsername = username.toLowerCase().trim().replace(/\s/g, '');
+        const isUnique = await isUsernameUnique(normalizedUsername);
+        if (!isUnique) {
+          toast.error("Username already taken. Please choose another.");
+          isSubmittingRef.current = false;
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (isSignUp) {
+        // ===== ATOMIC SIGNUP: Auth + Firestore in one operation =====
+        console.log("ATOMIC SIGNUP: Starting...");
+        const normalizedUsername = username.toLowerCase().trim().replace(/\s/g, '');
+        const user = await atomicSignUpWithEmail(email, password, normalizedUsername);
         
-        // Store username for later use after verification
-        localStorage.setItem('pendingUsername', username.toLowerCase().trim().replace(/\s/g, ''));
+        // Store for reference (profile already created atomically)
         localStorage.setItem('pendingEmail', email);
         
         toast.success("Account created! Please verify your email.");
@@ -146,6 +154,9 @@ const Auth = () => {
         if (!user.emailVerified) {
           toast.error("Please verify your email before signing in");
           setShowResendOption(true);
+          // UNLOCK so user can retry
+          isSubmittingRef.current = false;
+          setLoading(false);
           return;
         }
         
