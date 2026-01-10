@@ -97,44 +97,29 @@ export const isUsernameUnique = async (username: string, currentoderId?: string)
   }
 };
 
-// Search for user by name with prefix matching and email fallback
-export const searchByUsername = async (searchName: string, excludeoderId: string): Promise<Account | null> => {
-  const normalizedQuery = searchName.toLowerCase().trim();
+// Search for user by username with prefix matching
+export const searchByUsername = async (searchTerm: string, excludeoderId: string): Promise<Account | null> => {
+  const normalizedQuery = searchTerm.toLowerCase().trim();
   
   try {
-    // Try prefix match on 'name' field (startsWith behavior)
+    // Prefix match on 'username' field (startsWith behavior)
     const prefixQuery = query(
       accountsCollection, 
-      where('name', '>=', normalizedQuery),
-      where('name', '<=', normalizedQuery + '\uf8ff')
+      where('username', '>=', normalizedQuery),
+      where('username', '<=', normalizedQuery + '\uf8ff')
     );
-    const prefixSnapshot = await getDocs(prefixQuery);
+    const snapshot = await getDocs(prefixQuery);
     
-    if (!prefixSnapshot.empty) {
-      for (const docSnap of prefixSnapshot.docs) {
-        const data = docSnap.data();
-        if (data.oderId !== excludeoderId) {
-          return { id: docSnap.id, ...data } as Account;
-        }
-      }
-    }
-    
-    // Fallback: Try email search
-    const emailQuery = query(accountsCollection, where('email', '==', normalizedQuery));
-    const emailSnapshot = await getDocs(emailQuery);
-    
-    if (!emailSnapshot.empty) {
-      for (const docSnap of emailSnapshot.docs) {
-        const data = docSnap.data();
-        if (data.oderId !== excludeoderId) {
-          return { id: docSnap.id, ...data } as Account;
-        }
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      if (data.oderId !== excludeoderId) {
+        return { id: docSnap.id, ...data } as Account;
       }
     }
     
     return null;
   } catch (error: unknown) {
-    console.error("Error searching by name:", error);
+    console.error("Error searching by username:", error);
     logIndexError(error);
     return null;
   }
@@ -146,32 +131,20 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
   const results: Account[] = [];
   
   try {
-    // Prefix match on 'name' field (matches your Firestore schema)
+    // Prefix match on 'username' field (startsWith behavior)
     const prefixQuery = query(
       accountsCollection, 
-      where('name', '>=', normalizedQuery),
-      where('name', '<=', normalizedQuery + '\uf8ff'),
+      where('username', '>=', normalizedQuery),
+      where('username', '<=', normalizedQuery + '\uf8ff'),
       limit(maxResults)
     );
     const snapshot = await getDocs(prefixQuery);
     
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
+      // No extra filters - just exclude current user
       if (data.oderId !== excludeoderId) {
         results.push({ id: docSnap.id, ...data } as Account);
-      }
-    }
-    
-    // If no results, try email fallback
-    if (results.length === 0) {
-      const emailQuery = query(accountsCollection, where('email', '==', normalizedQuery));
-      const emailSnapshot = await getDocs(emailQuery);
-      
-      for (const docSnap of emailSnapshot.docs) {
-        const data = docSnap.data();
-        if (data.oderId !== excludeoderId) {
-          results.push({ id: docSnap.id, ...data } as Account);
-        }
       }
     }
     
