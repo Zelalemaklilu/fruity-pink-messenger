@@ -99,10 +99,18 @@ export const isUsernameUnique = async (username: string, currentoderId?: string)
 
 // Search for user by username with prefix matching
 export const searchByUsername = async (searchTerm: string, excludeoderId: string): Promise<Account | null> => {
-  const normalizedQuery = searchTerm.toLowerCase().trim();
+  // CLEAN INPUT: Remove "@" symbol and normalize
+  const normalizedQuery = searchTerm.replace(/@/g, '').toLowerCase().trim();
+  
+  console.log("searchByUsername - Searching ACCOUNTS for:", normalizedQuery);
+  
+  if (!normalizedQuery) {
+    console.log("Empty search term after normalization");
+    return null;
+  }
   
   try {
-    // Prefix match on 'username' field (startsWith behavior)
+    // FORCE COLLECTION REFERENCE: Use accountsCollection (which points to 'accounts')
     const prefixQuery = query(
       accountsCollection, 
       where('username', '>=', normalizedQuery),
@@ -110,8 +118,11 @@ export const searchByUsername = async (searchTerm: string, excludeoderId: string
     );
     const snapshot = await getDocs(prefixQuery);
     
+    console.log("searchByUsername - Results count:", snapshot.docs.length);
+    
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
+      console.log("searchByUsername - Found user:", data.username);
       if (data.oderId !== excludeoderId) {
         return { id: docSnap.id, ...data } as Account;
       }
@@ -119,7 +130,8 @@ export const searchByUsername = async (searchTerm: string, excludeoderId: string
     
     return null;
   } catch (error: unknown) {
-    console.error("Error searching by username:", error);
+    const firebaseError = error as { code?: string; message?: string };
+    console.error("searchByUsername SEARCH ERROR:", firebaseError.code, firebaseError.message);
     logIndexError(error);
     return null;
   }
