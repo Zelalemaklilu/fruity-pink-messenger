@@ -127,15 +127,24 @@ export const searchByUsername = async (searchTerm: string, excludeoderId: string
 
 // Search for multiple users (for autocomplete/suggestions)
 export const searchUsers = async (searchTerm: string, excludeoderId: string, maxResults: number = 5): Promise<Account[]> => {
-  const normalizedQuery = searchTerm.toLowerCase().trim();
+  // CLEAN INPUT: Remove "@" symbol and normalize
+  const normalizedQuery = searchTerm.replace(/@/g, '').toLowerCase().trim();
   const results: Account[] = [];
   
-  console.log("Searching ACCOUNTS for:", normalizedQuery);
+  console.log("Searching ACCOUNTS collection for:", normalizedQuery);
+  
+  if (!normalizedQuery) {
+    console.log("Empty search term after normalization");
+    return [];
+  }
   
   try {
+    // FORCE COLLECTION REFERENCE: Explicitly use 'accounts' collection
+    const accountsRef = collection(db, 'accounts');
+    
     // Prefix match on 'username' field (startsWith behavior)
     const prefixQuery = query(
-      accountsCollection, 
+      accountsRef, 
       where('username', '>=', normalizedQuery),
       where('username', '<=', normalizedQuery + '\uf8ff'),
       limit(maxResults)
@@ -146,6 +155,7 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
     
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
+      console.log("Found user:", data.username);
       // No extra filters - just exclude current user
       if (data.oderId !== excludeoderId) {
         results.push({ id: docSnap.id, ...data } as Account);
@@ -154,7 +164,9 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
     
     return results;
   } catch (error: unknown) {
-    console.error("Error searching users:", error);
+    // ERROR LOGGING: Log specific error code and message
+    const firebaseError = error as { code?: string; message?: string };
+    console.error("SEARCH ERROR:", firebaseError.code, firebaseError.message);
     logIndexError(error);
     return [];
   }
