@@ -130,6 +130,8 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
   const normalizedQuery = searchTerm.toLowerCase().trim();
   const results: Account[] = [];
   
+  console.log("Searching ACCOUNTS for:", normalizedQuery);
+  
   try {
     // Prefix match on 'username' field (startsWith behavior)
     const prefixQuery = query(
@@ -139,6 +141,8 @@ export const searchUsers = async (searchTerm: string, excludeoderId: string, max
       limit(maxResults)
     );
     const snapshot = await getDocs(prefixQuery);
+    
+    console.log("Search results count:", snapshot.docs.length);
     
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data();
@@ -273,10 +277,24 @@ const logIndexError = (error: unknown): void => {
 export const messagesCollection = collection(db, 'messages');
 
 export const sendMessage = async (message: Omit<Message, 'id' | 'createdAt'>): Promise<string> => {
-  const docRef = await addDoc(messagesCollection, {
-    ...message,
+  // STRICT: Must include 'senderId' field - required by security rules
+  // Rule checks: request.resource.data.senderId == request.auth.uid
+  const messageData = {
+    chatId: message.chatId,
+    senderId: message.senderId, // REQUIRED by security rules
+    receiverId: message.receiverId,
+    accountId: message.accountId,
+    content: message.content,
+    type: message.type,
+    status: message.status,
     createdAt: serverTimestamp()
-  });
+  };
+  
+  // Add optional fields
+  if (message.tempId) messageData['tempId'] = message.tempId;
+  if (message.fileName) messageData['fileName'] = message.fileName;
+  
+  const docRef = await addDoc(messagesCollection, messageData);
   return docRef.id;
 };
 
@@ -392,11 +410,23 @@ export const findOrCreateChat = async (
 };
 
 export const createChat = async (chat: Omit<Chat, 'id' | 'createdAt'>): Promise<string> => {
-  const docRef = await addDoc(chatsCollection, {
-    ...chat,
+  // STRICT: Only send 'participants' array (not participantIds) - required by security rules
+  const chatData = {
+    participants: chat.participants, // Must be exactly 2 UIDs per rules
+    participantUsernames: chat.participantUsernames || [],
+    participantNames: chat.participantNames || [],
+    participantAvatars: chat.participantAvatars || [],
     unreadCount: chat.unreadCount || {},
+    isGroup: chat.isGroup || false,
     createdAt: serverTimestamp()
-  });
+  };
+  
+  // Add optional fields only if they exist
+  if (chat.lastMessage) chatData['lastMessage'] = chat.lastMessage;
+  if (chat.lastMessageTimestamp) chatData['lastMessageTimestamp'] = chat.lastMessageTimestamp;
+  if (chat.groupName) chatData['groupName'] = chat.groupName;
+  
+  const docRef = await addDoc(chatsCollection, chatData);
   return docRef.id;
 };
 
