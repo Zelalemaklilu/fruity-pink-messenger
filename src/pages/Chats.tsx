@@ -49,11 +49,13 @@ const Chats = () => {
   const [searching, setSearching] = useState(false);
   const [totalUnread, setTotalUnread] = useState(0);
   const navigate = useNavigate();
-  const currentoderId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId") || "";
+  
+  // CRITICAL: Use Firebase Auth UID directly for chat operations
+  const currentAuthUid = auth.currentUser?.uid || "";
 
-  // Subscribe to real-time chat updates
+  // Subscribe to real-time chat updates using Auth UID
   useEffect(() => {
-    if (!currentoderId) {
+    if (!currentAuthUid) {
       setLoading(false);
       return;
     }
@@ -61,12 +63,12 @@ const Chats = () => {
     let isMounted = true;
 
     const unsubscribe = subscribeToChats(
-      currentoderId, 
+      currentAuthUid,  // Must be Auth UID for security rules
       (firestoreChats) => {
         if (!isMounted) return;
         
         const displayChats: ChatDisplay[] = firestoreChats.map((chat: FirestoreChat) => {
-          const idx = chat.participants?.indexOf(currentoderId) ?? -1;
+          const idx = chat.participants?.indexOf(currentAuthUid) ?? -1;
           const otherIdx = idx === 0 ? 1 : 0;
           
           const name = chat.isGroup 
@@ -74,7 +76,7 @@ const Chats = () => {
             : (chat.participantNames?.[otherIdx] || "Unknown");
           
           const avatar = chat.participantAvatars?.[otherIdx] || "";
-          const unreadCount = chat.unreadCount?.[currentoderId] || 0;
+          const unreadCount = chat.unreadCount?.[currentAuthUid] || 0;
 
           return {
             id: chat.id || "",
@@ -103,7 +105,7 @@ const Chats = () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [currentoderId]);
+  }, [currentAuthUid]);
 
   // Filter chats locally
   const filteredChats = chats.filter(chat =>
@@ -111,8 +113,10 @@ const Chats = () => {
   );
 
   // Handle username search (The Handshake)
+  // CRITICAL: Must use Firebase Auth UIDs for participants, NOT oderId values!
   const handleUsernameSearch = async () => {
-    if (!searchQuery.trim() || !currentoderId) return;
+    const currentAuthUid = auth.currentUser?.uid;
+    if (!searchQuery.trim() || !currentAuthUid) return;
     
     // Check if it looks like a username search (starts with @)
     const query = searchQuery.trim();
@@ -123,7 +127,7 @@ const Chats = () => {
 
     setSearching(true);
     try {
-      const foundUser = await searchByUsername(usernameToSearch, currentoderId);
+      const foundUser = await searchByUsername(usernameToSearch, currentAuthUid);
       
       if (!foundUser) {
         toast.error(`No user found with username @${usernameToSearch}`);
@@ -131,19 +135,25 @@ const Chats = () => {
       }
 
       // Get current user's info
-      const currentUser = await getAccountByoderId(currentoderId);
+      const currentUser = await getAccountByoderId(currentAuthUid);
       if (!currentUser) {
         toast.error("Please complete your profile first");
         return;
       }
 
-      // Find or create chat with this user
+      // CRITICAL: Use the document ID as the Auth UID
+      // In the schema, document ID = auth.uid (oderId field also stores this)
+      const otherAuthUid = foundUser.id || foundUser.oderId || '';
+      
+      console.log("Creating chat with Auth UIDs:", { currentAuthUid, otherAuthUid });
+
+      // Find or create chat with Auth UIDs (NOT oderId!)
       const chatId = await findOrCreateChat(
-        currentoderId,
+        currentAuthUid,  // Firebase Auth UID
         currentUser.username || '',
         currentUser.name || '',
         currentUser.avatarUrl || currentUser.photoURL || '',
-        foundUser.oderId || foundUser.id || '',
+        otherAuthUid,    // Firebase Auth UID (document ID)
         foundUser.username || '',
         foundUser.name || '',
         foundUser.avatarUrl || foundUser.photoURL || ''
