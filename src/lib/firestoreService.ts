@@ -297,15 +297,25 @@ const logIndexError = (error: unknown): void => {
   }
 };
 
-// Messages Collection
-export const messagesCollection = collection(db, 'messages');
+// Messages are now SUBCOLLECTIONS under chats: /chats/{chatId}/messages/{messageId}
+// Helper to get messages subcollection reference
+const getMessagesCollection = (chatId: string) => collection(db, 'chats', chatId, 'messages');
 
 export const sendMessage = async (message: Omit<Message, 'id' | 'createdAt'>): Promise<string> => {
-  // STRICT: Must include 'senderId' field - required by security rules
-  // Rule checks: request.resource.data.senderId == request.auth.uid
-  const messageData = {
-    chatId: message.chatId,
-    senderId: message.senderId, // REQUIRED by security rules
+  // STRICT RULE COMPLIANCE:
+  // Rule: request.resource.data.senderId == request.auth.uid
+  // senderId MUST be included and match the authenticated user's UID
+  
+  if (!message.chatId) {
+    throw new Error('chatId is required for sending messages');
+  }
+  
+  if (!message.senderId) {
+    throw new Error('senderId is required - must match auth.uid for security rules');
+  }
+  
+  const messageData: Record<string, unknown> = {
+    senderId: message.senderId, // REQUIRED by security rules - must match auth.uid
     receiverId: message.receiverId,
     accountId: message.accountId,
     content: message.content,
@@ -315,31 +325,35 @@ export const sendMessage = async (message: Omit<Message, 'id' | 'createdAt'>): P
   };
   
   // Add optional fields
-  if (message.tempId) messageData['tempId'] = message.tempId;
-  if (message.fileName) messageData['fileName'] = message.fileName;
+  if (message.tempId) messageData.tempId = message.tempId;
+  if (message.fileName) messageData.fileName = message.fileName;
   
-  const docRef = await addDoc(messagesCollection, messageData);
+  // Write to subcollection: /chats/{chatId}/messages/{messageId}
+  const messagesRef = getMessagesCollection(message.chatId);
+  const docRef = await addDoc(messagesRef, messageData);
+  
+  console.log("Message sent to subcollection:", message.chatId, "->", docRef.id);
   return docRef.id;
 };
 
-// Get messages with pagination
+// Get messages with pagination from subcollection
 export const getMessagesByChatId = async (
   chatId: string, 
   limitCount: number = 20,
   lastDoc?: QueryDocumentSnapshot<DocumentData>
 ): Promise<{ messages: Message[], lastDoc: QueryDocumentSnapshot<DocumentData> | null }> => {
   try {
+    const messagesRef = getMessagesCollection(chatId);
+    
     let q = query(
-      messagesCollection, 
-      where('chatId', '==', chatId),
+      messagesRef, 
       orderBy('createdAt', 'desc'),
       limit(limitCount)
     );
     
     if (lastDoc) {
       q = query(
-        messagesCollection, 
-        where('chatId', '==', chatId),
+        messagesRef, 
         orderBy('createdAt', 'desc'),
         startAfter(lastDoc),
         limit(limitCount)
@@ -347,7 +361,11 @@ export const getMessagesByChatId = async (
     }
     
     const snapshot = await getDocs(q);
-    const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message)).reverse();
+    const messages = snapshot.docs.map(docSnap => ({ 
+      id: docSnap.id, 
+      chatId, // Add chatId since it's not stored in subcollection docs
+      ...docSnap.data() 
+    } as Message)).reverse();
     const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
     
     return { messages, lastDoc: newLastDoc };
@@ -358,19 +376,23 @@ export const getMessagesByChatId = async (
   }
 };
 
-// Real-time message listener
+// Real-time message listener for subcollection
 export const subscribeToMessages = (
   chatId: string,
   callback: (messages: Message[]) => void
 ): (() => void) => {
+  const messagesRef = getMessagesCollection(chatId);
   const q = query(
-    messagesCollection,
-    where('chatId', '==', chatId),
+    messagesRef,
     orderBy('createdAt', 'asc')
   );
   
   return onSnapshot(q, (snapshot) => {
-    const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
+    const messages = snapshot.docs.map(docSnap => ({ 
+      id: docSnap.id, 
+      chatId, // Add chatId since it's not stored in subcollection docs
+      ...docSnap.data() 
+    } as Message));
     callback(messages);
   }, (error) => {
     console.error("Error in message subscription:", error);
@@ -378,8 +400,9 @@ export const subscribeToMessages = (
   });
 };
 
-export const updateMessageStatus = async (messageId: string, status: Message['status']): Promise<void> => {
-  const docRef = doc(db, 'messages', messageId);
+// Update message status in subcollection
+export const updateMessageStatus = async (chatId: string, messageId: string, status: Message['status']): Promise<void> => {
+  const docRef = doc(db, 'chats', chatId, 'messages', messageId);
   await updateDoc(docRef, { status });
 };
 
