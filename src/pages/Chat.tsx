@@ -210,11 +210,22 @@ const Chat = () => {
     const tempId = `temp_${Date.now()}`;
     const receiverId = getOtherParticipantId();
     
+    // DEBUG: Log exact values being sent to Firestore
     console.log("sendMessage DEBUG:", { 
       authUid, 
       chatId, 
       receiverId,
-      participants: chatInfo.participants 
+      participants: chatInfo.participants,
+      isAuthUidInParticipants: chatInfo.participants?.includes(authUid),
+      messagePayload: {
+        accountId: authUid,
+        chatId: chatId,
+        senderId: authUid,
+        receiverId: receiverId,
+        content: messageText.substring(0, 20) + "...",
+        type: "text",
+        status: "sending"
+      }
     });
     
     // Optimistic update - show message instantly
