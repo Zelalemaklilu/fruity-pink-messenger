@@ -181,12 +181,16 @@ const Chat = () => {
   }, [chatId, chatError, getCurrentUserId]);
 
   const handleSendMessage = async () => {
-    const currentUserId = getCurrentUserId();
+    // STRICT: Use auth.currentUser.uid directly - this MUST match security rules
+    const authUid = auth.currentUser?.uid;
     
-    if (!newMessage.trim() || !chatId || !currentUserId) {
-      if (!currentUserId) {
-        toast.error("Not authenticated. Please log in again.");
-      }
+    if (!authUid) {
+      toast.error("Not authenticated. Please log in again.");
+      console.error("sendMessage FAILED: auth.currentUser.uid is null/undefined");
+      return;
+    }
+    
+    if (!newMessage.trim() || !chatId) {
       return;
     }
     
@@ -196,14 +200,22 @@ const Chat = () => {
       return;
     }
     
-    if (!chatInfo.participants?.includes(currentUserId)) {
+    if (!chatInfo.participants?.includes(authUid)) {
       toast.error("You don't have access to this chat");
+      console.error("sendMessage FAILED: user not in participants", { authUid, participants: chatInfo.participants });
       return;
     }
 
     const messageText = newMessage.trim();
     const tempId = `temp_${Date.now()}`;
     const receiverId = getOtherParticipantId();
+    
+    console.log("sendMessage DEBUG:", { 
+      authUid, 
+      chatId, 
+      receiverId,
+      participants: chatInfo.participants 
+    });
     
     // Optimistic update - show message instantly
     const tempMessage: MessageDisplay = {
@@ -217,10 +229,11 @@ const Chat = () => {
     setNewMessage("");
 
     try {
+      // CRITICAL: senderId MUST be auth.currentUser.uid to pass security rules
       await sendMessage({
-        accountId: currentUserId,
+        accountId: authUid,
         chatId: chatId,
-        senderId: currentUserId,
+        senderId: authUid, // MUST match request.auth.uid in Firestore rules
         receiverId: receiverId,
         content: messageText,
         type: "text",
