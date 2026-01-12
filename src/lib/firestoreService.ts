@@ -410,29 +410,34 @@ export const updateMessageStatus = async (chatId: string, messageId: string, sta
 export const chatsCollection = collection(db, 'chats');
 
 // Find or create chat between two users
+// CRITICAL: participants array MUST contain Firebase Auth UIDs, NOT oderId values!
+// Firestore rules check: request.auth.uid in participants
 export const findOrCreateChat = async (
-  currentoderId: string,
+  currentAuthUid: string,   // Firebase Auth UID (NOT oderId!)
   currentUsername: string,
   currentName: string,
   currentAvatar: string,
-  otheroderId: string,
+  otherAuthUid: string,     // Firebase Auth UID (NOT oderId!)
   otherUsername: string,
   otherName: string,
   otherAvatar: string
 ): Promise<string> => {
-  // Search for existing chat
+  console.log("findOrCreateChat - Using Auth UIDs:", { currentAuthUid, otherAuthUid });
+  
+  // Search for existing chat using Auth UID
   try {
     const q = query(
       chatsCollection,
-      where('participants', 'array-contains', currentoderId)
+      where('participants', 'array-contains', currentAuthUid)
     );
     
     const snapshot = await getDocs(q);
     
-    // Find chat that contains both users
+    // Find chat that contains both users (by Auth UID)
     for (const chatDoc of snapshot.docs) {
       const data = chatDoc.data();
-      if (data.participants?.includes(otheroderId)) {
+      if (data.participants?.includes(otherAuthUid)) {
+        console.log("Found existing chat:", chatDoc.id);
         return chatDoc.id;
       }
     }
@@ -441,17 +446,18 @@ export const findOrCreateChat = async (
     logIndexError(error);
   }
   
-  // Create new chat if not found
+  // Create new chat with Auth UIDs (NOT oderId!)
   const newChat: Omit<Chat, 'id'> = {
-    participants: [currentoderId, otheroderId],
+    participants: [currentAuthUid, otherAuthUid], // MUST be Auth UIDs for security rules!
     participantUsernames: [currentUsername, otherUsername],
     participantNames: [currentName, otherName],
     participantAvatars: [currentAvatar || '', otherAvatar || ''],
-    unreadCount: { [currentoderId]: 0, [otheroderId]: 0 },
+    unreadCount: { [currentAuthUid]: 0, [otherAuthUid]: 0 },
     isGroup: false,
     createdAt: serverTimestamp() as Timestamp
   };
   
+  console.log("Creating new chat with participants (Auth UIDs):", newChat.participants);
   const docRef = await addDoc(chatsCollection, newChat);
   return docRef.id;
 };
@@ -478,11 +484,12 @@ export const createChat = async (chat: Omit<Chat, 'id' | 'createdAt'>): Promise<
 };
 
 // Get chats for a user, sorted by last message
-export const getChatsByoderId = async (oderId: string): Promise<Chat[]> => {
+// CRITICAL: authUid must be a Firebase Auth UID (stored in participants array)
+export const getChatsByAuthUid = async (authUid: string): Promise<Chat[]> => {
   try {
     const q = query(
       chatsCollection, 
-      where('participants', 'array-contains', oderId),
+      where('participants', 'array-contains', authUid),
       orderBy('lastMessageTimestamp', 'desc')
     );
     const snapshot = await getDocs(q);
@@ -495,7 +502,7 @@ export const getChatsByoderId = async (oderId: string): Promise<Chat[]> => {
     try {
       const fallbackQ = query(
         chatsCollection, 
-        where('participants', 'array-contains', oderId)
+        where('participants', 'array-contains', authUid)
       );
       const fallbackSnapshot = await getDocs(fallbackQ);
       const chats = fallbackSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Chat));
@@ -512,18 +519,20 @@ export const getChatsByoderId = async (oderId: string): Promise<Chat[]> => {
   }
 };
 
-// Legacy compatibility
-export const getChatsByAccountId = getChatsByoderId;
+// Legacy compatibility - getChatsByoderId now expects Auth UID
+export const getChatsByoderId = getChatsByAuthUid;
+export const getChatsByAccountId = getChatsByAuthUid;
 
 // Real-time chat listener
+// CRITICAL: authUid must be a Firebase Auth UID (stored in participants array)
 export const subscribeToChats = (
-  oderId: string,
+  authUid: string,
   callback: (chats: Chat[]) => void,
   onError?: (error: Error) => void
 ): (() => void) => {
   const q = query(
     chatsCollection,
-    where('participants', 'array-contains', oderId)
+    where('participants', 'array-contains', authUid)
   );
   
   return onSnapshot(q, (snapshot) => {
