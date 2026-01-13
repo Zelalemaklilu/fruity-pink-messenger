@@ -21,11 +21,28 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 
-// Types
+/**
+ * STRICT FIRESTORE SCHEMA COMPLIANCE
+ * ==================================
+ * 
+ * COLLECTION: accounts (NOT 'users')
+ * - Document ID = Firebase Auth UID = oderId field
+ * - Fields: createdAt, email, isActive, name, oderId, phoneNumber, updatedAt, username
+ * 
+ * COLLECTION: chats
+ * - participants: MUST be array of exactly 2 Firebase Auth UIDs
+ * - Security Rule: request.auth.uid in resource.data.participants
+ * 
+ * SUBCOLLECTION: chats/{chatId}/messages
+ * - senderId: MUST be request.auth.uid (Firebase Auth UID)
+ * - Security Rule: request.resource.data.senderId == request.auth.uid
+ */
+
+// Types - Strictly matching Firestore schema
 export interface Account {
-  id?: string;
-  oderId?: string;
-  username: string;
+  id?: string;           // Document ID (= Firebase Auth UID)
+  oderId?: string;       // Firebase Auth UID field
+  username: string;      // Unique lowercase username
   email?: string;
   name: string;
   phoneNumber: string;
@@ -40,10 +57,10 @@ export interface Account {
 export interface Message {
   id?: string;
   tempId?: string;
-  accountId: string;
+  accountId: string;     // Sender's Auth UID
   chatId: string;
-  senderId: string;
-  receiverId: string;
+  senderId: string;      // REQUIRED: Must be request.auth.uid
+  receiverId: string;    // Receiver's Auth UID (from participants)
   content: string;
   type: 'text' | 'image' | 'voice' | 'file';
   status: 'sending' | 'sent' | 'delivered' | 'read';
@@ -53,20 +70,17 @@ export interface Message {
 
 export interface Chat {
   id?: string;
-  participants: string[];
+  participants: string[];          // MUST be exactly 2 Firebase Auth UIDs
   participantUsernames: string[];
   participantNames: string[];
   participantAvatars: string[];
   lastMessage?: string;
   lastMessageTimestamp?: Timestamp;
   lastMessageAt?: Timestamp;
-  unreadCount: { [oderId: string]: number };
+  unreadCount: { [authUid: string]: number };  // Keyed by Auth UID
   isGroup: boolean;
   groupName?: string;
   createdAt?: Timestamp;
-  // Legacy fields for compatibility
-  accountId?: string;
-  participantIds?: string[];
 }
 
 // Accounts Collection
@@ -297,42 +311,52 @@ const logIndexError = (error: unknown): void => {
   }
 };
 
-// Messages are now SUBCOLLECTIONS under chats: /chats/{chatId}/messages/{messageId}
-// Helper to get messages subcollection reference
+/**
+ * MESSAGES SUBCOLLECTION
+ * Path: /chats/{chatId}/messages/{messageId}
+ * 
+ * SECURITY RULE REQUIREMENT:
+ * - request.auth.uid in chat.participants (must be chat participant)
+ * - request.resource.data.senderId == request.auth.uid (senderId MUST match auth)
+ */
 const getMessagesCollection = (chatId: string) => collection(db, 'chats', chatId, 'messages');
 
 export const sendMessage = async (message: Omit<Message, 'id' | 'createdAt'>): Promise<string> => {
-  // STRICT RULE COMPLIANCE:
-  // Rule: request.resource.data.senderId == request.auth.uid
-  // senderId MUST be included and match the authenticated user's UID
-  
+  // STRICT VALIDATION: Ensure required fields are present
   if (!message.chatId) {
     throw new Error('chatId is required for sending messages');
   }
   
   if (!message.senderId) {
-    throw new Error('senderId is required - must match auth.uid for security rules');
+    throw new Error('senderId is REQUIRED - Firestore rule: request.resource.data.senderId == request.auth.uid');
   }
   
+  // STRICT MESSAGE PAYLOAD - matches Firestore security rules exactly
   const messageData: Record<string, unknown> = {
-    senderId: message.senderId, // REQUIRED by security rules - must match auth.uid
-    receiverId: message.receiverId,
-    accountId: message.accountId,
+    senderId: message.senderId,     // REQUIRED: Must be auth.currentUser.uid
+    receiverId: message.receiverId, // The other participant's Auth UID
+    accountId: message.accountId,   // Same as senderId (for consistency)
     content: message.content,
     type: message.type,
     status: message.status,
     createdAt: serverTimestamp()
   };
   
-  // Add optional fields
+  // Optional fields
   if (message.tempId) messageData.tempId = message.tempId;
   if (message.fileName) messageData.fileName = message.fileName;
   
-  // Write to subcollection: /chats/{chatId}/messages/{messageId}
+  console.log("sendMessage STRICT:", { 
+    chatId: message.chatId, 
+    senderId: message.senderId,
+    receiverId: message.receiverId 
+  });
+  
+  // Write to: /chats/{chatId}/messages/{messageId}
   const messagesRef = getMessagesCollection(message.chatId);
   const docRef = await addDoc(messagesRef, messageData);
   
-  console.log("Message sent to subcollection:", message.chatId, "->", docRef.id);
+  console.log("Message created:", message.chatId, "->", docRef.id);
   return docRef.id;
 };
 
@@ -406,25 +430,40 @@ export const updateMessageStatus = async (chatId: string, messageId: string, sta
   await updateDoc(docRef, { status });
 };
 
-// Chats Collection
+/**
+ * CHATS COLLECTION
+ * 
+ * SECURITY RULES REQUIREMENTS:
+ * - CREATE: participants.size() == 2 AND request.auth.uid in participants
+ * - READ/UPDATE/DELETE: request.auth.uid in resource.data.participants
+ */
 export const chatsCollection = collection(db, 'chats');
 
-// Find or create chat between two users
-// CRITICAL: participants array MUST contain Firebase Auth UIDs, NOT oderId values!
-// Firestore rules check: request.auth.uid in participants
+/**
+ * Find or create a chat between two users
+ * 
+ * CRITICAL: participants array MUST contain exactly 2 Firebase Auth UIDs
+ * - currentAuthUid: The authenticated user's auth.uid
+ * - otherAuthUid: The target user's Auth UID (from accounts.id or accounts.oderId)
+ */
 export const findOrCreateChat = async (
-  currentAuthUid: string,   // Firebase Auth UID (NOT oderId!)
+  currentAuthUid: string,   // Firebase Auth UID (auth.currentUser.uid)
   currentUsername: string,
   currentName: string,
   currentAvatar: string,
-  otherAuthUid: string,     // Firebase Auth UID (NOT oderId!)
+  otherAuthUid: string,     // Target user's Auth UID (from accounts document ID)
   otherUsername: string,
   otherName: string,
   otherAvatar: string
 ): Promise<string> => {
-  console.log("findOrCreateChat - Using Auth UIDs:", { currentAuthUid, otherAuthUid });
+  console.log("findOrCreateChat STRICT:", { currentAuthUid, otherAuthUid });
   
-  // Search for existing chat using Auth UID
+  // Validate both UIDs are present
+  if (!currentAuthUid || !otherAuthUid) {
+    throw new Error('Both Auth UIDs are required for chat creation');
+  }
+  
+  // Search for existing chat
   try {
     const q = query(
       chatsCollection,
@@ -433,7 +472,7 @@ export const findOrCreateChat = async (
     
     const snapshot = await getDocs(q);
     
-    // Find chat that contains both users (by Auth UID)
+    // Find chat that contains both users
     for (const chatDoc of snapshot.docs) {
       const data = chatDoc.data();
       if (data.participants?.includes(otherAuthUid)) {
@@ -446,26 +485,39 @@ export const findOrCreateChat = async (
     logIndexError(error);
   }
   
-  // Create new chat with Auth UIDs (NOT oderId!)
-  const newChat: Omit<Chat, 'id'> = {
-    participants: [currentAuthUid, otherAuthUid], // MUST be Auth UIDs for security rules!
+  // Create new chat - STRICT compliance with security rules
+  const newChat = {
+    participants: [currentAuthUid, otherAuthUid], // EXACTLY 2 Auth UIDs
     participantUsernames: [currentUsername, otherUsername],
     participantNames: [currentName, otherName],
     participantAvatars: [currentAvatar || '', otherAvatar || ''],
     unreadCount: { [currentAuthUid]: 0, [otherAuthUid]: 0 },
     isGroup: false,
-    createdAt: serverTimestamp() as Timestamp
+    createdAt: serverTimestamp()
   };
   
-  console.log("Creating new chat with participants (Auth UIDs):", newChat.participants);
+  console.log("Creating chat STRICT:", { 
+    participants: newChat.participants,
+    participantUsernames: newChat.participantUsernames 
+  });
+  
   const docRef = await addDoc(chatsCollection, newChat);
   return docRef.id;
 };
 
+/**
+ * Create a new chat document
+ * 
+ * STRICT: participants array must be exactly 2 Firebase Auth UIDs
+ */
 export const createChat = async (chat: Omit<Chat, 'id' | 'createdAt'>): Promise<string> => {
-  // STRICT: Only send 'participants' array (not participantIds) - required by security rules
-  const chatData = {
-    participants: chat.participants, // Must be exactly 2 UIDs per rules
+  // Validate participants
+  if (!chat.participants || chat.participants.length !== 2) {
+    throw new Error('Chat must have exactly 2 participants (Auth UIDs)');
+  }
+  
+  const chatData: Record<string, unknown> = {
+    participants: chat.participants, // Exactly 2 Auth UIDs
     participantUsernames: chat.participantUsernames || [],
     participantNames: chat.participantNames || [],
     participantAvatars: chat.participantAvatars || [],
@@ -474,10 +526,12 @@ export const createChat = async (chat: Omit<Chat, 'id' | 'createdAt'>): Promise<
     createdAt: serverTimestamp()
   };
   
-  // Add optional fields only if they exist
-  if (chat.lastMessage) chatData['lastMessage'] = chat.lastMessage;
-  if (chat.lastMessageTimestamp) chatData['lastMessageTimestamp'] = chat.lastMessageTimestamp;
-  if (chat.groupName) chatData['groupName'] = chat.groupName;
+  // Optional fields
+  if (chat.lastMessage) chatData.lastMessage = chat.lastMessage;
+  if (chat.lastMessageTimestamp) chatData.lastMessageTimestamp = chat.lastMessageTimestamp;
+  if (chat.groupName) chatData.groupName = chat.groupName;
+  
+  console.log("createChat STRICT:", { participants: chat.participants });
   
   const docRef = await addDoc(chatsCollection, chatData);
   return docRef.id;

@@ -181,12 +181,11 @@ const Chat = () => {
   }, [chatId, chatError, getCurrentUserId]);
 
   const handleSendMessage = async () => {
-    // STRICT: Use auth.currentUser.uid directly - this MUST match security rules
+    // STRICT: Use auth.currentUser.uid directly - MUST match security rules
     const authUid = auth.currentUser?.uid;
     
     if (!authUid) {
       toast.error("Not authenticated. Please log in again.");
-      console.error("sendMessage FAILED: auth.currentUser.uid is null/undefined");
       return;
     }
     
@@ -202,31 +201,12 @@ const Chat = () => {
     
     if (!chatInfo.participants?.includes(authUid)) {
       toast.error("You don't have access to this chat");
-      console.error("sendMessage FAILED: user not in participants", { authUid, participants: chatInfo.participants });
       return;
     }
 
     const messageText = newMessage.trim();
     const tempId = `temp_${Date.now()}`;
     const receiverId = getOtherParticipantId();
-    
-    // DEBUG: Log exact values being sent to Firestore
-    console.log("sendMessage DEBUG:", { 
-      authUid, 
-      chatId, 
-      receiverId,
-      participants: chatInfo.participants,
-      isAuthUidInParticipants: chatInfo.participants?.includes(authUid),
-      messagePayload: {
-        accountId: authUid,
-        chatId: chatId,
-        senderId: authUid,
-        receiverId: receiverId,
-        content: messageText.substring(0, 20) + "...",
-        type: "text",
-        status: "sending"
-      }
-    });
     
     // Optimistic update - show message instantly
     const tempMessage: MessageDisplay = {
@@ -240,11 +220,11 @@ const Chat = () => {
     setNewMessage("");
 
     try {
-      // CRITICAL: senderId MUST be auth.currentUser.uid to pass security rules
+      // STRICT COMPLIANCE: senderId MUST be auth.currentUser.uid
       await sendMessage({
         accountId: authUid,
         chatId: chatId,
-        senderId: authUid, // MUST match request.auth.uid in Firestore rules
+        senderId: authUid, // REQUIRED: Firestore rule checks senderId == request.auth.uid
         receiverId: receiverId,
         content: messageText,
         type: "text",
@@ -273,7 +253,7 @@ const Chat = () => {
       
       // Show specific error message
       if (error instanceof Error && error.message.includes('permission')) {
-        toast.error("Permission denied. Please refresh the page.");
+        toast.error("Permission denied. Chat may need recreation with correct Auth UIDs.");
       } else {
         toast.error("Failed to send message. Please try again.");
       }
