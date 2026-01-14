@@ -430,6 +430,75 @@ export const updateMessageStatus = async (chatId: string, messageId: string, sta
   await updateDoc(docRef, { status });
 };
 
+// Mark all unread messages as "read" for a specific user (when they open the chat)
+export const markMessagesAsRead = async (chatId: string, currentUserId: string): Promise<void> => {
+  try {
+    const messagesRef = getMessagesCollection(chatId);
+    // Get all messages NOT sent by current user that are not yet "read"
+    const q = query(
+      messagesRef,
+      where('senderId', '!=', currentUserId),
+      where('status', 'in', ['sent', 'delivered'])
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    // Update each message to "read"
+    const updatePromises = snapshot.docs.map(docSnap => 
+      updateDoc(doc(db, 'chats', chatId, 'messages', docSnap.id), { status: 'read' })
+    );
+    
+    await Promise.all(updatePromises);
+    console.log(`Marked ${snapshot.docs.length} messages as read`);
+  } catch (error) {
+    // Firestore may not allow compound queries on different fields without index
+    // Fallback: get all messages and filter client-side
+    console.warn("markMessagesAsRead index issue, using fallback:", error);
+    
+    try {
+      const messagesRef = getMessagesCollection(chatId);
+      const q = query(messagesRef);
+      const snapshot = await getDocs(q);
+      
+      const updatePromises = snapshot.docs
+        .filter(docSnap => {
+          const data = docSnap.data();
+          return data.senderId !== currentUserId && 
+                 (data.status === 'sent' || data.status === 'delivered');
+        })
+        .map(docSnap => 
+          updateDoc(doc(db, 'chats', chatId, 'messages', docSnap.id), { status: 'read' })
+        );
+      
+      await Promise.all(updatePromises);
+    } catch (fallbackError) {
+      console.error("Failed to mark messages as read:", fallbackError);
+    }
+  }
+};
+
+// Mark messages as "delivered" when recipient opens the app (but not the specific chat)
+export const markMessagesAsDelivered = async (chatId: string, currentUserId: string): Promise<void> => {
+  try {
+    const messagesRef = getMessagesCollection(chatId);
+    const q = query(messagesRef);
+    const snapshot = await getDocs(q);
+    
+    const updatePromises = snapshot.docs
+      .filter(docSnap => {
+        const data = docSnap.data();
+        return data.senderId !== currentUserId && data.status === 'sent';
+      })
+      .map(docSnap => 
+        updateDoc(doc(db, 'chats', chatId, 'messages', docSnap.id), { status: 'delivered' })
+      );
+    
+    await Promise.all(updatePromises);
+  } catch (error) {
+    console.error("Failed to mark messages as delivered:", error);
+  }
+};
+
 /**
  * CHATS COLLECTION
  * 
