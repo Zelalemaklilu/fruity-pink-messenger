@@ -12,6 +12,7 @@ import {
   getChatById,
   resetUnreadCount,
   incrementUnreadCount,
+  markMessagesAsRead,
   Message as FirestoreMessage,
   Chat as FirestoreChat
 } from "@/lib/firestoreService";
@@ -130,9 +131,14 @@ const Chat = () => {
         setChatInfo(chat);
         setChatError(null);
         
-        // Reset unread count when opening chat (non-blocking)
+        // Reset unread count and mark messages as read when opening chat (non-blocking)
         resetUnreadCount(chatId, currentUserId).catch(err => {
           console.warn("Failed to reset unread count:", err);
+        });
+        
+        // Mark incoming messages as "read"
+        markMessagesAsRead(chatId, currentUserId).catch(err => {
+          console.warn("Failed to mark messages as read:", err);
         });
       } catch (error) {
         console.error("Error loading chat:", error);
