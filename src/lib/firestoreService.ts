@@ -401,10 +401,15 @@ export const getMessagesByChatId = async (
 };
 
 // Real-time message listener for subcollection
+// SECURITY: Your rules use get() on parent chat to verify participants
+// Path: chats/{chatId}/messages - requires auth.uid in chat.participants
 export const subscribeToMessages = (
   chatId: string,
-  callback: (messages: Message[]) => void
+  callback: (messages: Message[]) => void,
+  onError?: (error: Error) => void
 ): (() => void) => {
+  console.log("subscribeToMessages: Subscribing to", `chats/${chatId}/messages`);
+  
   const messagesRef = getMessagesCollection(chatId);
   const q = query(
     messagesRef,
@@ -417,10 +422,16 @@ export const subscribeToMessages = (
       chatId, // Add chatId since it's not stored in subcollection docs
       ...docSnap.data() 
     } as Message));
+    console.log("subscribeToMessages: Received", messages.length, "messages");
     callback(messages);
   }, (error) => {
-    console.error("Error in message subscription:", error);
+    console.error("subscribeToMessages ERROR:", error);
+    console.error("This often means: Security rule 'get(/databases/.../chats/$(chatId)).data.participants' failed");
+    console.error("Check that the chat document has 'participants' array containing your Auth UID");
     logIndexError(error);
+    onError?.(error as Error);
+    // Return empty array so UI doesn't freeze
+    callback([]);
   });
 };
 
@@ -682,12 +693,82 @@ export const getChatById = async (chatId: string): Promise<Chat | null> => {
     const docRef = doc(db, 'chats', chatId);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as Chat;
+      const data = docSnap.data();
+      const chat = { id: docSnap.id, ...data } as Chat;
+      
+      // VALIDATE: Ensure participants is a proper array of 2 strings
+      if (!Array.isArray(chat.participants) || chat.participants.length !== 2) {
+        console.error("INVALID CHAT: participants must be array of 2 Auth UIDs", chat.participants);
+        return null;
+      }
+      
+      return chat;
     }
     return null;
   } catch (error) {
     console.error("Error getting chat:", error);
     return null;
+  }
+};
+
+/**
+ * Verify and ensure chat document has valid participants array
+ * This is critical for security rules that check: get(/databases/.../chats/$(chatId)).data.participants
+ */
+export const verifyChatParticipants = async (chatId: string, currentUserId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, 'chats', chatId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      console.error("verifyChatParticipants: Chat does not exist:", chatId);
+      return false;
+    }
+    
+    const data = docSnap.data();
+    
+    // Check 1: participants field exists
+    if (!data.participants) {
+      console.error("verifyChatParticipants: MISSING participants field in chat:", chatId);
+      return false;
+    }
+    
+    // Check 2: participants is an array
+    if (!Array.isArray(data.participants)) {
+      console.error("verifyChatParticipants: participants is NOT an array:", typeof data.participants);
+      return false;
+    }
+    
+    // Check 3: participants has exactly 2 elements
+    if (data.participants.length !== 2) {
+      console.error("verifyChatParticipants: participants must have exactly 2 UIDs, has:", data.participants.length);
+      return false;
+    }
+    
+    // Check 4: current user is in participants
+    if (!data.participants.includes(currentUserId)) {
+      console.error("verifyChatParticipants: Current user NOT in participants:", {
+        currentUserId,
+        participants: data.participants
+      });
+      return false;
+    }
+    
+    // Check 5: Both elements are non-empty strings
+    if (!data.participants.every((p: unknown) => typeof p === 'string' && p.length > 0)) {
+      console.error("verifyChatParticipants: participants contains invalid entries:", data.participants);
+      return false;
+    }
+    
+    console.log("verifyChatParticipants: Chat structure VALID for security rules", {
+      chatId,
+      participants: data.participants
+    });
+    
+    return true;
+  } catch (error) {
+    console.error("verifyChatParticipants error:", error);
+    return false;
   }
 };
 

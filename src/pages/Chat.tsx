@@ -13,6 +13,7 @@ import {
   resetUnreadCount,
   incrementUnreadCount,
   markMessagesAsRead,
+  verifyChatParticipants,
   Message as FirestoreMessage,
   Chat as FirestoreChat
 } from "@/lib/firestoreService";
@@ -92,7 +93,7 @@ const Chat = () => {
     return chatInfo.participants?.[otherIdx] || "";
   }, [chatInfo, getCurrentUserId]);
 
-  // Load chat info and reset unread count
+  // Load chat info and verify participants for security rules
   useEffect(() => {
     let isMounted = true;
     
@@ -111,6 +112,19 @@ const Chat = () => {
       }
 
       try {
+        // STEP 1: Verify chat has valid participants array (for security rules)
+        const isValid = await verifyChatParticipants(chatId, currentUserId);
+        
+        if (!isMounted) return;
+        
+        if (!isValid) {
+          console.error("Chat participants validation failed - security rules will block message reads");
+          setChatError("Chat structure invalid. The 'participants' array may be missing or malformed.");
+          setLoading(false);
+          return;
+        }
+        
+        // STEP 2: Get full chat info
         const chat = await getChatById(chatId);
         
         if (!isMounted) return;
@@ -121,12 +135,14 @@ const Chat = () => {
           return;
         }
         
-        // Verify user is a participant
+        // STEP 3: Verify user is a participant (double-check)
         if (!chat.participants?.includes(currentUserId)) {
           setChatError("You don't have access to this chat");
           setLoading(false);
           return;
         }
+        
+        console.log("Chat loaded with valid participants:", chat.participants);
         
         setChatInfo(chat);
         setChatError(null);
@@ -156,35 +172,46 @@ const Chat = () => {
     };
   }, [chatId, getCurrentUserId]);
 
-  // Subscribe to real-time messages
+  // Subscribe to real-time messages (only after chat is validated)
   useEffect(() => {
-    if (!chatId || chatError) return;
+    if (!chatId || chatError || !chatInfo) return;
     
     const currentUserId = getCurrentUserId();
     if (!currentUserId) return;
 
-    const unsubscribe = subscribeToMessages(chatId, (firestoreMessages) => {
-      const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => ({
-        id: msg.id || msg.tempId || "",
-        text: msg.content,
-        timestamp: formatTime(msg.createdAt),
-        isOwn: msg.senderId === currentUserId,
-        status: msg.status,
-        type: msg.type,
-        mediaUrl: msg.type === 'image' || msg.type === 'file' ? msg.content : undefined,
-        fileName: msg.fileName
-      }));
-      setMessages(displayMessages);
-      setLoading(false);
-      
-      // Scroll to bottom on new messages
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({ index: displayMessages.length - 1, behavior: 'smooth' });
-      }, 100);
-    });
+    console.log("Subscribing to messages for chat:", chatId);
+    console.log("Chat participants:", chatInfo.participants);
+    
+    const unsubscribe = subscribeToMessages(
+      chatId, 
+      (firestoreMessages) => {
+        const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => ({
+          id: msg.id || msg.tempId || "",
+          text: msg.content,
+          timestamp: formatTime(msg.createdAt),
+          isOwn: msg.senderId === currentUserId,
+          status: msg.status,
+          type: msg.type,
+          mediaUrl: msg.type === 'image' || msg.type === 'file' ? msg.content : undefined,
+          fileName: msg.fileName
+        }));
+        setMessages(displayMessages);
+        setLoading(false);
+        
+        // Scroll to bottom on new messages
+        setTimeout(() => {
+          virtuosoRef.current?.scrollToIndex({ index: displayMessages.length - 1, behavior: 'smooth' });
+        }, 100);
+      },
+      (error) => {
+        console.error("Message subscription failed:", error);
+        setChatError("Failed to load messages. Security rules may be blocking access.");
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
-  }, [chatId, chatError, getCurrentUserId]);
+  }, [chatId, chatError, chatInfo, getCurrentUserId]);
 
   const handleSendMessage = async () => {
     // STRICT: Use auth.currentUser.uid directly - MUST match security rules
