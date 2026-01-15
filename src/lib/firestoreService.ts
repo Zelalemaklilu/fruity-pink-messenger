@@ -714,60 +714,138 @@ export const getChatById = async (chatId: string): Promise<Chat | null> => {
 /**
  * Verify and ensure chat document has valid participants array
  * This is critical for security rules that check: get(/databases/.../chats/$(chatId)).data.participants
+ *
+ * IMPORTANT:
+ * - Some legacy chats may have participants stored under a different field name.
+ * - With strict rules, missing/incorrect `participants` will block reads from `chats/{chatId}/messages`.
+ * - This function will attempt a safe repair by inferring the 2 Auth UIDs from other fields and writing them back.
  */
+const normalizeUidArray2 = (value: unknown): string[] | null => {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  const unique = Array.from(new Set(cleaned));
+  return unique.length === 2 ? unique : null;
+};
+
+const inferParticipantsArray2 = (data: DocumentData): string[] | null => {
+  // 1) Common alternate field names
+  const altKeys = [
+    'participantIds',
+    'participantUids',
+    'memberIds',
+    'members',
+    'userIds',
+    'users',
+    'uids'
+  ] as const;
+
+  for (const key of altKeys) {
+    const fromAlt = normalizeUidArray2((data as Record<string, unknown>)[key]);
+    if (fromAlt) return fromAlt;
+  }
+
+  // 2) unreadCount object keys are Auth UIDs in this app's schema
+  if (data.unreadCount && typeof data.unreadCount === 'object') {
+    const keys = Object.keys(data.unreadCount as Record<string, unknown>)
+      .map((k) => k.trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(keys));
+    if (unique.length === 2) return unique;
+  }
+
+  // 3) sender/receiver style fields
+  const maybeSender = typeof data.senderId === 'string' ? data.senderId.trim() : '';
+  const maybeReceiver = typeof data.receiverId === 'string' ? data.receiverId.trim() : '';
+  if (maybeSender && maybeReceiver) return Array.from(new Set([maybeSender, maybeReceiver]));
+
+  const maybeFrom = typeof (data as any).from === 'string' ? String((data as any).from).trim() : '';
+  const maybeTo = typeof (data as any).to === 'string' ? String((data as any).to).trim() : '';
+  if (maybeFrom && maybeTo) return Array.from(new Set([maybeFrom, maybeTo]));
+
+  return null;
+};
+
 export const verifyChatParticipants = async (chatId: string, currentUserId: string): Promise<boolean> => {
   try {
     const docRef = doc(db, 'chats', chatId);
     const docSnap = await getDoc(docRef);
-    
+
     if (!docSnap.exists()) {
-      console.error("verifyChatParticipants: Chat does not exist:", chatId);
+      console.error('verifyChatParticipants: Chat does not exist:', chatId);
       return false;
     }
-    
+
     const data = docSnap.data();
-    
-    // Check 1: participants field exists
-    if (!data.participants) {
-      console.error("verifyChatParticipants: MISSING participants field in chat:", chatId);
+
+    // First try the canonical field
+    let participants = normalizeUidArray2(data.participants);
+
+    // Repair path: infer + write-back
+    if (!participants || !participants.includes(currentUserId)) {
+      const inferred = inferParticipantsArray2(data);
+
+      if (!inferred) {
+        console.error('verifyChatParticipants: Cannot infer participants for chat:', {
+          chatId,
+          hasParticipantsField: Boolean((data as any).participants),
+          unreadCountKeys: data.unreadCount ? Object.keys(data.unreadCount as Record<string, unknown>) : []
+        });
+        return false;
+      }
+
+      if (!inferred.includes(currentUserId)) {
+        console.error('verifyChatParticipants: Inferred participants does not include current user:', {
+          chatId,
+          currentUserId,
+          inferred
+        });
+        return false;
+      }
+
+      if (inferred.length !== 2) {
+        console.error('verifyChatParticipants: Inferred participants must be exactly 2 UIDs:', {
+          chatId,
+          inferred
+        });
+        return false;
+      }
+
+      try {
+        await updateDoc(docRef, { participants: inferred });
+        participants = inferred;
+        console.log('verifyChatParticipants: Repaired chat participants field for strict rules', {
+          chatId,
+          participants
+        });
+      } catch (writeError) {
+        console.error('verifyChatParticipants: Failed to repair participants (update denied?):', writeError);
+        return false;
+      }
+    }
+
+    // Final validation
+    if (!participants || participants.length !== 2) {
+      console.error('verifyChatParticipants: INVALID participants after validation:', participants);
       return false;
     }
-    
-    // Check 2: participants is an array
-    if (!Array.isArray(data.participants)) {
-      console.error("verifyChatParticipants: participants is NOT an array:", typeof data.participants);
+
+    if (!participants.every((p) => typeof p === 'string' && p.length > 0)) {
+      console.error('verifyChatParticipants: participants contains invalid entries:', participants);
       return false;
     }
-    
-    // Check 3: participants has exactly 2 elements
-    if (data.participants.length !== 2) {
-      console.error("verifyChatParticipants: participants must have exactly 2 UIDs, has:", data.participants.length);
-      return false;
-    }
-    
-    // Check 4: current user is in participants
-    if (!data.participants.includes(currentUserId)) {
-      console.error("verifyChatParticipants: Current user NOT in participants:", {
-        currentUserId,
-        participants: data.participants
-      });
-      return false;
-    }
-    
-    // Check 5: Both elements are non-empty strings
-    if (!data.participants.every((p: unknown) => typeof p === 'string' && p.length > 0)) {
-      console.error("verifyChatParticipants: participants contains invalid entries:", data.participants);
-      return false;
-    }
-    
-    console.log("verifyChatParticipants: Chat structure VALID for security rules", {
+
+    console.log('verifyChatParticipants: Chat structure VALID for security rules', {
       chatId,
-      participants: data.participants
+      participants
     });
-    
+
     return true;
   } catch (error) {
-    console.error("verifyChatParticipants error:", error);
+    console.error('verifyChatParticipants error:', error);
     return false;
   }
 };
