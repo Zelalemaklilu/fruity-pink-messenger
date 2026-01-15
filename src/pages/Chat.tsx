@@ -483,7 +483,7 @@ const Chat = () => {
       )}
 
       {/* Messages with Virtualization */}
-      <div className="flex-1">
+      <div className="flex-1 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -491,9 +491,9 @@ const Chat = () => {
         ) : (
           <Virtuoso
             ref={virtuosoRef}
-            style={{ height: '100%' }}
+            className="h-full"
             data={messages}
-            initialTopMostItemIndex={messages.length - 1}
+            initialTopMostItemIndex={Math.max(messages.length - 1, 0)}
             followOutput="smooth"
             itemContent={(_, message) => (
               <div className="px-4 py-1">
