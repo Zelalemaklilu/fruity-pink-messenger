@@ -331,20 +331,23 @@ export const sendMessage = async (message: Omit<Message, 'id' | 'createdAt'>): P
     throw new Error('senderId is REQUIRED - Firestore rule: request.resource.data.senderId == request.auth.uid');
   }
   
-  // STRICT MESSAGE PAYLOAD - matches Firestore security rules exactly
+  // STRICT MESSAGE PAYLOAD - matches Firestore security rules EXACTLY
+  // Your rules check immutability of: senderId, text, type, mediaUrl, fileName, createdAt
   const messageData: Record<string, unknown> = {
-    senderId: message.senderId,     // REQUIRED: Must be auth.currentUser.uid
-    receiverId: message.receiverId, // The other participant's Auth UID
-    accountId: message.accountId,   // Same as senderId (for consistency)
-    content: message.content,
-    type: message.type,
-    status: message.status,
-    createdAt: serverTimestamp()
+    senderId: message.senderId,       // REQUIRED: Must match auth.uid
+    receiverId: message.receiverId,   // The other participant's Auth UID
+    accountId: message.accountId,     // Same as senderId (for consistency)
+    text: message.content,            // IMMUTABLE: Rule checks request.resource.data.text == resource.data.text
+    content: message.content,         // Keep for backward compat
+    type: message.type,               // IMMUTABLE: Rule checks type
+    status: message.status,           // MUTABLE: Only this can change
+    mediaUrl: null,                   // IMMUTABLE: Rule checks mediaUrl (set null if not provided)
+    fileName: message.fileName || null, // IMMUTABLE: Rule checks fileName
+    createdAt: serverTimestamp()      // IMMUTABLE: Rule checks createdAt
   };
   
   // Optional fields
   if (message.tempId) messageData.tempId = message.tempId;
-  if (message.fileName) messageData.fileName = message.fileName;
   
   console.log("sendMessage STRICT:", { 
     chatId: message.chatId, 
@@ -435,10 +438,35 @@ export const subscribeToMessages = (
   });
 };
 
-// Update message status in subcollection
+// Update message status in subcollection - PRESERVES IMMUTABLE FIELDS for strict rules
 export const updateMessageStatus = async (chatId: string, messageId: string, status: Message['status']): Promise<void> => {
-  const docRef = doc(db, 'chats', chatId, 'messages', messageId);
-  await updateDoc(docRef, { status });
+  try {
+    const docRef = doc(db, 'chats', chatId, 'messages', messageId);
+    
+    // Get current message to preserve immutable fields
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      console.warn('[updateMessageStatus] Message not found:', messageId);
+      return;
+    }
+    
+    const data = docSnap.data();
+    
+    // STRICT UPDATE: Include ALL immutable fields to satisfy security rules
+    // Rules check: senderId, text, type, mediaUrl, fileName, createdAt must stay the same
+    await updateDoc(docRef, {
+      senderId: data.senderId,
+      text: data.text,
+      type: data.type,
+      mediaUrl: data.mediaUrl ?? null,
+      fileName: data.fileName ?? null,
+      createdAt: data.createdAt,
+      status  // Only this actually changes
+    });
+  } catch (error: unknown) {
+    const firebaseError = error as { code?: string };
+    console.warn('[updateMessageStatus] Failed:', firebaseError.code);
+  }
 };
 
 /**
@@ -486,14 +514,24 @@ export const markMessagesAsRead = async (chatId: string, currentUserId: string):
     
     for (const docSnap of unreadDocs) {
       try {
-        await updateDoc(doc(db, 'chats', chatId, 'messages', docSnap.id), { status: 'read' });
+        const data = docSnap.data();
+        const docRef = doc(db, 'chats', chatId, 'messages', docSnap.id);
+        
+        // STRICT UPDATE: Preserve ALL immutable fields for security rules
+        await updateDoc(docRef, {
+          senderId: data.senderId,
+          text: data.text,
+          type: data.type,
+          mediaUrl: data.mediaUrl ?? null,
+          fileName: data.fileName ?? null,
+          createdAt: data.createdAt,
+          status: 'read'  // Only this changes
+        });
         successCount++;
       } catch (updateError: unknown) {
         const firebaseError = updateError as { code?: string };
-        // Only log first failure to avoid spam
         if (failCount === 0) {
           console.warn('[markMessagesAsRead] Update blocked by security rules:', firebaseError.code);
-          console.info('This is expected if your Firestore rules have no "allow update" for messages');
         }
         failCount++;
       }
@@ -532,15 +570,26 @@ export const markMessagesAsDelivered = async (chatId: string, currentUserId: str
     
     if (sentDocs.length === 0) return;
     
-    // Update each individually with error handling
+    // Update each individually with error handling - PRESERVE IMMUTABLE FIELDS
     for (const docSnap of sentDocs) {
       try {
-        await updateDoc(doc(db, 'chats', chatId, 'messages', docSnap.id), { status: 'delivered' });
+        const data = docSnap.data();
+        const docRef = doc(db, 'chats', chatId, 'messages', docSnap.id);
+        
+        // STRICT UPDATE: Preserve ALL immutable fields for security rules
+        await updateDoc(docRef, {
+          senderId: data.senderId,
+          text: data.text,
+          type: data.type,
+          mediaUrl: data.mediaUrl ?? null,
+          fileName: data.fileName ?? null,
+          createdAt: data.createdAt,
+          status: 'delivered'  // Only this changes
+        });
       } catch (updateError: unknown) {
-        // Security rules may block - this is expected, just log once
         const firebaseError = updateError as { code?: string };
         console.warn('[markMessagesAsDelivered] Update blocked:', firebaseError.code);
-        break; // Don't spam logs
+        break;
       }
     }
   } catch (error: unknown) {
