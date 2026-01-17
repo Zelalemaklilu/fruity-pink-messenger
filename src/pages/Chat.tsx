@@ -185,16 +185,27 @@ const Chat = () => {
     const unsubscribe = subscribeToMessages(
       chatId, 
       (firestoreMessages) => {
-        const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => ({
-          id: msg.id || msg.tempId || "",
-          text: msg.content,
-          timestamp: formatTime(msg.createdAt),
-          isOwn: msg.senderId === currentUserId,
-          status: msg.status,
-          type: msg.type,
-          mediaUrl: msg.type === 'image' || msg.type === 'file' ? msg.content : undefined,
-          fileName: msg.fileName
-        }));
+        const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => {
+          // Backward/strict-schema compatibility:
+          // - Some older docs may have `text` instead of `content`
+          // - Some media messages may store URL in `mediaUrl`
+          const rawText = (msg as any).content ?? (msg as any).text ?? "";
+          const text = typeof rawText === "string" ? rawText : "";
+          const mediaUrl = (msg.type === 'image' || msg.type === 'file')
+            ? ((msg as any).mediaUrl ?? text)
+            : undefined;
+
+          return {
+            id: msg.id || msg.tempId || "",
+            text,
+            timestamp: formatTime(msg.createdAt),
+            isOwn: msg.senderId === currentUserId,
+            status: msg.status,
+            type: msg.type,
+            mediaUrl,
+            fileName: msg.fileName
+          };
+        });
         setMessages(displayMessages);
         setLoading(false);
         
