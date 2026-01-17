@@ -42,18 +42,13 @@ service cloud.firestore {
              get(/databases/$(database)/documents/chats/$(chatId))
                .data.participants;
 
-        // Update message (READ-RECEIPT ONLY — CONTENT IMMUTABLE)
+        // Update message (READ-RECEIPT ONLY — RECEIVER ONLY)
+        // Only the RECEIVER can update status (mark as read/delivered)
         allow update: if request.auth != null
+          && request.auth.uid == resource.data.receiverId
           && request.auth.uid in
              get(/databases/$(database)/documents/chats/$(chatId))
-               .data.participants
-          // ===== ABSOLUTE IMMUTABILITY =====
-          && request.resource.data.senderId   == resource.data.senderId
-          && request.resource.data.text       == resource.data.text
-          && request.resource.data.type       == resource.data.type
-          && request.resource.data.mediaUrl   == resource.data.mediaUrl
-          && request.resource.data.fileName   == resource.data.fileName
-          && request.resource.data.createdAt  == resource.data.createdAt;
+               .data.participants;
       }
     }
 
