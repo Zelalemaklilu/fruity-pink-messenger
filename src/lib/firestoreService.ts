@@ -19,7 +19,7 @@ import {
   DocumentData,
   QueryDocumentSnapshot
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 
 /**
  * STRICT FIRESTORE SCHEMA COMPLIANCE
@@ -522,7 +522,33 @@ export const markMessagesAsRead = async (chatId: string, currentUserId: string):
       } catch (updateError: unknown) {
         const firebaseError = updateError as { code?: string };
         if (failCount === 0) {
+          const d = docSnap.data() as Record<string, unknown>;
+          const requiredKeys = [
+            "receiverId",
+            "senderId",
+            "text",
+            "type",
+            "mediaUrl",
+            "fileName",
+            "createdAt",
+            "status",
+          ] as const;
+
           console.warn('[markMessagesAsRead] Update blocked by security rules:', firebaseError.code);
+          console.warn('[markMessagesAsRead] DENY DEBUG', {
+            authUid: auth.currentUser?.uid,
+            passedUserId: currentUserId,
+            docId: docSnap.id,
+            receiverId: (d as any).receiverId,
+            senderId: (d as any).senderId,
+            text: (d as any).text,
+            type: (d as any).type,
+            mediaUrl: (d as any).mediaUrl,
+            fileName: (d as any).fileName,
+            createdAt: (d as any).createdAt,
+            status: (d as any).status,
+            missingKeys: requiredKeys.filter((k) => !(k in (d as any))),
+          });
         }
         failCount++;
       }
