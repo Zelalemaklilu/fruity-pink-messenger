@@ -501,23 +501,10 @@ export const markMessagesAsRead = async (chatId: string, currentUserId: string):
       try {
         const docRef = doc(db, 'chats', chatId, 'messages', docSnap.id);
 
-        // STRICT RULE COMPAT:
-        // Some rules enforce "content immutability" by comparing request.resource.data fields
-        // (senderId/text/type/mediaUrl/fileName/createdAt) to existing resource.data.
-        // To guarantee those fields stay identical, we re-send the current document data
-        // and only change `status`.
-        const currentData = docSnap.data();
-        const nextData: Record<string, unknown> = {
-          ...currentData,
-          status: 'read',
-        };
-
-        // Firestore rejects undefined values; drop them defensively.
-        for (const [k, v] of Object.entries(nextData)) {
-          if (v === undefined) delete (nextData as Record<string, unknown>)[k];
-        }
-
-        await setDoc(docRef, nextData, { merge: true });
+        // Update ONLY the status field.
+        // This is the most compatible approach with strict rules that limit updates to read-receipt fields
+        // (e.g., rules that check request.writeFields hasOnly(['status'])).
+        await updateDoc(docRef, { status: 'read' });
         successCount++;
       } catch (updateError: unknown) {
         const firebaseError = updateError as { code?: string };
@@ -588,21 +575,10 @@ export const markMessagesAsDelivered = async (chatId: string, currentUserId: str
     if (sentDocs.length === 0) return;
     
     // Update each individually with error handling
-    // STRICT RULE COMPAT: re-send current document data so immutability checks pass
     for (const docSnap of sentDocs) {
       try {
         const docRef = doc(db, 'chats', chatId, 'messages', docSnap.id);
-        const currentData = docSnap.data();
-        const nextData: Record<string, unknown> = {
-          ...currentData,
-          status: 'delivered',
-        };
-
-        for (const [k, v] of Object.entries(nextData)) {
-          if (v === undefined) delete (nextData as Record<string, unknown>)[k];
-        }
-
-        await setDoc(docRef, nextData, { merge: true });
+        await updateDoc(docRef, { status: 'delivered' });
       } catch (updateError: unknown) {
         const firebaseError = updateError as { code?: string };
         console.warn('[markMessagesAsDelivered] Update blocked:', firebaseError.code);
