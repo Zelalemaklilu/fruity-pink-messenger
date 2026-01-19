@@ -26,7 +26,7 @@ service cloud.firestore {
         && request.auth.uid in resource.data.participants;
 
       // =========================
-      // MESSAGES (ULTRA-STRICT)
+      // MESSAGES
       // =========================
       match /messages/{messageId} {
         // Create message: sender must be auth user + must be chat participant
@@ -42,13 +42,11 @@ service cloud.firestore {
              get(/databases/$(database)/documents/chats/$(chatId))
                .data.participants;
 
-        // Update message (READ-RECEIPT ONLY — RECEIVER ONLY)
-        // Only the RECEIVER can update status (mark as read/delivered)
+        // Update message: RECEIVER can update status field ONLY
         allow update: if request.auth != null
           && request.auth.uid == resource.data.receiverId
-          && request.auth.uid in
-             get(/databases/$(database)/documents/chats/$(chatId))
-               .data.participants;
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['delivered', 'read'];
       }
     }
 
