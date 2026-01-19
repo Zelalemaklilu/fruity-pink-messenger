@@ -481,35 +481,49 @@ export const markMessagesAsRead = async (chatId: string, currentUserId: string):
     const snapshot = await getDocs(q);
     
     // Filter client-side for unread messages
-    const unreadDocs = snapshot.docs.filter(docSnap => {
-      const data = docSnap.data();
-      return data.status === 'sent' || data.status === 'delivered';
+    const unreadDocs = snapshot.docs.filter((docSnap) => {
+      const data = docSnap.data() as Record<string, unknown>;
+      const status = data.status as string | undefined;
+      return status === 'sent' || status === 'delivered';
     });
-    
+
     if (unreadDocs.length === 0) {
       console.log('[markMessagesAsRead] No unread messages to update');
       return;
     }
-    
+
     console.log(`[markMessagesAsRead] Found ${unreadDocs.length} unread messages`);
-    
+
     // Update each message individually to handle partial failures
     let successCount = 0;
     let failCount = 0;
-    
+
     for (const docSnap of unreadDocs) {
+      const d = docSnap.data() as Record<string, unknown>;
+      const currentStatus = d.status as string | undefined;
+
       try {
         const docRef = doc(db, 'chats', chatId, 'messages', docSnap.id);
 
-        // Update ONLY the status field.
-        // This is the most compatible approach with strict rules that limit updates to read-receipt fields
-        // (e.g., rules that check request.writeFields hasOnly(['status'])).
-        await updateDoc(docRef, { status: 'read' });
+        // Try the simplest allowed operation first.
+        // If rules require a strict transition (sent -> delivered -> read),
+        // fall back to that path only when needed.
+        try {
+          await updateDoc(docRef, { status: 'read' });
+        } catch (innerErr: unknown) {
+          const innerFbErr = innerErr as { code?: string };
+          if (innerFbErr.code === 'permission-denied' && currentStatus === 'sent') {
+            await updateDoc(docRef, { status: 'delivered' });
+            await updateDoc(docRef, { status: 'read' });
+          } else {
+            throw innerErr;
+          }
+        }
+
         successCount++;
       } catch (updateError: unknown) {
         const firebaseError = updateError as { code?: string };
         if (failCount === 0) {
-          const d = docSnap.data() as Record<string, unknown>;
           const requiredKeys = [
             "receiverId",
             "senderId",
@@ -540,7 +554,7 @@ export const markMessagesAsRead = async (chatId: string, currentUserId: string):
         failCount++;
       }
     }
-    
+
     if (successCount > 0) {
       console.log(`[markMessagesAsRead] Updated ${successCount} messages`);
     }
