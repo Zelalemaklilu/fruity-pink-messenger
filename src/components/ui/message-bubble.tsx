@@ -139,10 +139,10 @@ export function MessageBubble({
           <div className="flex items-center justify-end gap-1 mt-1">
             <span className="text-xs opacity-70">{timestamp}</span>
             {isOwn && status && (
-              <div className="text-xs opacity-70">
-                {status === "sent" && <Check className="h-3 w-3" />}
-                {status === "delivered" && <CheckCheck className="h-3 w-3" />}
-                {status === "read" && <CheckCheck className="h-3 w-3 text-primary" />}
+              <div className="flex items-center">
+                {status === "sent" && <Check className="h-3 w-3 opacity-70" />}
+                {status === "delivered" && <CheckCheck className="h-3 w-3 opacity-70" />}
+                {status === "read" && <CheckCheck className="h-3 w-3 text-read-receipt" />}
               </div>
             )}
           </div>

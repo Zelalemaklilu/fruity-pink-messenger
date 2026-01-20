@@ -63,7 +63,8 @@ export default {
 					online: 'hsl(var(--online))',
 					away: 'hsl(var(--away))',
 					offline: 'hsl(var(--offline))'
-				}
+				},
+				'read-receipt': 'hsl(var(--read-receipt))'
 			},
 			backgroundImage: {
 				'gradient-primary': 'var(--gradient-primary)',
