@@ -411,26 +411,46 @@ export const subscribeToMessages = (
   callback: (messages: Message[]) => void,
   onError?: (error: Error) => void
 ): (() => void) => {
-  console.log("subscribeToMessages: Subscribing to", `chats/${chatId}/messages`);
+  console.log("[subscribeToMessages] 🔌 Subscribing to:", `chats/${chatId}/messages`);
+  console.log("[subscribeToMessages] Current auth UID:", auth.currentUser?.uid);
   
   const messagesRef = getMessagesCollection(chatId);
+  
+  // NOTE: If orderBy causes issues due to missing createdAt, 
+  // Firestore will return 0 docs. Let's use a fallback approach.
   const q = query(
     messagesRef,
     orderBy('createdAt', 'asc')
   );
   
   return onSnapshot(q, (snapshot) => {
+    console.log("[subscribeToMessages] 📦 Snapshot received, size:", snapshot.size);
+    console.log("[subscribeToMessages] Empty?:", snapshot.empty);
+    
+    // Log each document for debugging
+    snapshot.docs.forEach((docSnap, idx) => {
+      const data = docSnap.data();
+      console.log(`[subscribeToMessages] DOC ${idx}:`, {
+        id: docSnap.id,
+        senderId: data.senderId,
+        text: data.text?.substring?.(0, 20) || data.content?.substring?.(0, 20),
+        createdAt: data.createdAt ? 'Timestamp' : 'MISSING',
+        type: data.type
+      });
+    });
+    
     const messages = snapshot.docs.map(docSnap => ({ 
       id: docSnap.id, 
       chatId, // Add chatId since it's not stored in subcollection docs
       ...docSnap.data() 
     } as Message));
-    console.log("subscribeToMessages: Received", messages.length, "messages");
+    
+    console.log("[subscribeToMessages] ✅ Returning", messages.length, "messages to callback");
     callback(messages);
   }, (error) => {
-    console.error("subscribeToMessages ERROR:", error);
-    console.error("This often means: Security rule 'get(/databases/.../chats/$(chatId)).data.participants' failed");
-    console.error("Check that the chat document has 'participants' array containing your Auth UID");
+    console.error("[subscribeToMessages] ❌ ERROR:", error);
+    console.error("[subscribeToMessages] Error code:", (error as any).code);
+    console.error("[subscribeToMessages] This often means: Security rule failed or index missing");
     logIndexError(error);
     onError?.(error as Error);
     // Return empty array so UI doesn't freeze
