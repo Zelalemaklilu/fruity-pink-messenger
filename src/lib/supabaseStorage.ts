@@ -21,8 +21,8 @@ export const uploadProfilePicture = async (
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResult> => {
   const fileExt = file.name.split('.').pop();
-  const fileName = `${userId}/avatar.${fileExt}`;
-  const path = `avatars/${fileName}`;
+  const fileName = `avatar.${fileExt}`;
+  const path = `${userId}/${fileName}`;
 
   return uploadFile('avatars', path, file, onProgress);
 };
@@ -34,8 +34,8 @@ export const uploadChatImage = async (
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResult> => {
   const fileExt = file.name.split('.').pop();
-  const fileName = `${chatId}/${Date.now()}.${fileExt}`;
-  const path = `chat-images/${fileName}`;
+  const fileName = `${Date.now()}.${fileExt}`;
+  const path = `${chatId}/${fileName}`;
 
   return uploadFile('chat-media', path, file, onProgress);
 };
@@ -46,8 +46,8 @@ export const uploadChatFile = async (
   file: File,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResult> => {
-  const fileName = `${chatId}/${Date.now()}-${file.name}`;
-  const path = `chat-files/${fileName}`;
+  const fileName = `${Date.now()}-${file.name}`;
+  const path = `${chatId}/${fileName}`;
 
   return uploadFile('chat-media', path, file, onProgress);
 };
@@ -58,8 +58,8 @@ export const uploadVoiceMessage = async (
   audioBlob: Blob,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadResult> => {
-  const fileName = `${chatId}/${Date.now()}.webm`;
-  const path = `voice-messages/${fileName}`;
+  const fileName = `${Date.now()}.webm`;
+  const path = `${chatId}/${fileName}`;
   const file = new File([audioBlob], 'voice.webm', { type: 'audio/webm' });
 
   return uploadFile('chat-media', path, file, onProgress);
@@ -93,11 +93,17 @@ const uploadFile = async (
     onProgress({ percentage: 100, bytesTransferred: file.size, totalBytes: file.size });
   }
 
-  // Get public URL
-  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  // Get signed URL (1 hour expiry) for private buckets
+  const { data: urlData, error: urlError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(data.path, 3600);
+
+  if (urlError || !urlData) {
+    throw new Error('Failed to create signed URL');
+  }
 
   return {
-    url: urlData.publicUrl,
+    url: urlData.signedUrl,
     path: data.path,
     name: file.name,
     size: file.size,
@@ -114,10 +120,17 @@ export const deleteFile = async (bucket: string, path: string): Promise<void> =>
   }
 };
 
-// Get file URL
-export const getFileUrl = (bucket: string, path: string): string => {
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+// Get signed file URL (async for private buckets)
+export const getFileUrl = async (bucket: string, path: string): Promise<string> => {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, 3600);
+  
+  if (error || !data) {
+    throw new Error('Failed to create signed URL');
+  }
+  
+  return data.signedUrl;
 };
 
 // Validate file
