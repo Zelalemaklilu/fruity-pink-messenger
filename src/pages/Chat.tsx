@@ -16,6 +16,7 @@ import {
   incrementUnreadCount,
   setTypingStatus,
   subscribeToTyping,
+  deleteMessage,
   Message as SupabaseMessage,
   Chat as SupabaseChat,
   Profile
@@ -316,6 +317,15 @@ const Chat = () => {
     }
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    const success = await deleteMessage(messageId);
+    if (success) {
+      toast.success("Message deleted");
+    } else {
+      toast.error("Failed to delete message");
+    }
+  };
+
   const chatName = otherProfile?.name || otherProfile?.username || "Chat";
   const chatAvatar = otherProfile?.avatar_url || "";
 
@@ -409,6 +419,10 @@ const Chat = () => {
                   timestamp={message.timestamp}
                   isOwn={message.isOwn}
                   status={message.status === 'sending' ? 'sent' : message.status}
+                  type={message.type}
+                  mediaUrl={message.mediaUrl}
+                  fileName={message.fileName}
+                  onDelete={message.isOwn ? () => handleDeleteMessage(message.id) : undefined}
                 />
               </div>
             )}
