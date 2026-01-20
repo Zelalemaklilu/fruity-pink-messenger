@@ -20,6 +20,19 @@ export interface Profile {
   updated_at: string;
 }
 
+// Public profile (excludes email, phone_number, updated_at)
+export interface PublicProfile {
+  id: string;
+  username: string;
+  name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_active: boolean;
+  is_online: boolean;
+  last_seen: string;
+  created_at?: string; // Optional - not returned by search_users_public
+}
+
 export interface Chat {
   id: string;
   participant_1: string;
@@ -91,15 +104,26 @@ export const updateProfile = async (
   return data;
 };
 
-export const searchUsers = async (searchTerm: string): Promise<Profile[]> => {
+// Get public profile data (excludes email/phone) for other users
+export const getPublicProfile = async (profileId: string): Promise<PublicProfile | null> => {
+  const { data, error } = await supabase.rpc('get_public_profile', {
+    profile_id: profileId,
+  });
+
+  if (error) {
+    console.error('Error fetching public profile:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+export const searchUsers = async (searchTerm: string): Promise<PublicProfile[]> => {
   const term = searchTerm.replace('@', '').toLowerCase().trim();
   if (!term) return [];
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .ilike('username', `${term}%`)
-    .limit(20);
+  const { data, error } = await supabase.rpc('search_users_public', {
+    search_term: term,
+  });
 
   if (error) {
     console.error('Error searching users:', error);
@@ -110,32 +134,30 @@ export const searchUsers = async (searchTerm: string): Promise<Profile[]> => {
 
 export const isUsernameUnique = async (username: string): Promise<boolean> => {
   const term = username.toLowerCase().trim();
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('username', term)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('search_users_public', {
+    search_term: term,
+  });
 
   if (error) {
     console.error('Error checking username:', error);
     return false;
   }
-  return data === null;
+  // Check if exact match exists
+  return !data?.some((p: PublicProfile) => p.username === term);
 };
 
-export const searchByUsername = async (username: string): Promise<Profile | null> => {
+export const searchByUsername = async (username: string): Promise<PublicProfile | null> => {
   const term = username.replace('@', '').toLowerCase().trim();
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('username', term)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('search_users_public', {
+    search_term: term,
+  });
 
   if (error) {
     console.error('Error searching by username:', error);
     return null;
   }
-  return data;
+  // Find exact match
+  return data?.find((p: PublicProfile) => p.username === term) || null;
 };
 
 export const updateOnlineStatus = async (userId: string, isOnline: boolean): Promise<void> => {

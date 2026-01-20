@@ -60,29 +60,8 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "chats_last_sender_id_fkey"
-            columns: ["last_sender_id"]
-            isOneToOne: false
-            referencedRelation: "profiles_public"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "chats_participant_1_fkey"
             columns: ["participant_1"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chats_participant_1_fkey"
-            columns: ["participant_1"]
-            isOneToOne: false
-            referencedRelation: "profiles_public"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chats_participant_2_fkey"
-            columns: ["participant_2"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -91,7 +70,7 @@ export type Database = {
             foreignKeyName: "chats_participant_2_fkey"
             columns: ["participant_2"]
             isOneToOne: false
-            referencedRelation: "profiles_public"
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -152,24 +131,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "messages_receiver_id_fkey"
-            columns: ["receiver_id"]
-            isOneToOne: false
-            referencedRelation: "profiles_public"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "messages_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "messages_sender_id_fkey"
-            columns: ["sender_id"]
-            isOneToOne: false
-            referencedRelation: "profiles_public"
             referencedColumns: ["id"]
           },
         ]
@@ -256,58 +221,43 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "typing_indicators_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles_public"
-            referencedColumns: ["id"]
-          },
         ]
       }
     }
     Views: {
-      profiles_public: {
-        Row: {
-          avatar_url: string | null
-          bio: string | null
-          created_at: string | null
-          id: string | null
-          is_active: boolean | null
-          is_online: boolean | null
-          last_seen: string | null
-          name: string | null
-          username: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          bio?: string | null
-          created_at?: string | null
-          id?: string | null
-          is_active?: boolean | null
-          is_online?: boolean | null
-          last_seen?: string | null
-          name?: string | null
-          username?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          bio?: string | null
-          created_at?: string | null
-          id?: string | null
-          is_active?: boolean | null
-          is_online?: boolean | null
-          last_seen?: string | null
-          name?: string | null
-          username?: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       find_or_create_chat: {
         Args: { user1_id: string; user2_id: string }
         Returns: string
+      }
+      get_public_profile: {
+        Args: { profile_id: string }
+        Returns: {
+          avatar_url: string
+          bio: string
+          created_at: string
+          id: string
+          is_active: boolean
+          is_online: boolean
+          last_seen: string
+          name: string
+          username: string
+        }[]
+      }
+      search_users_public: {
+        Args: { search_term: string }
+        Returns: {
+          avatar_url: string
+          bio: string
+          id: string
+          is_active: boolean
+          is_online: boolean
+          last_seen: string
+          name: string
+          username: string
+        }[]
       }
     }
     Enums: {
