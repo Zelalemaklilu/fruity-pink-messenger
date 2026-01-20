@@ -108,6 +108,21 @@ export const searchUsers = async (searchTerm: string): Promise<Profile[]> => {
   return data || [];
 };
 
+export const isUsernameUnique = async (username: string): Promise<boolean> => {
+  const term = username.toLowerCase().trim();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('username', term)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error checking username:', error);
+    return false;
+  }
+  return data === null;
+};
+
 export const searchByUsername = async (username: string): Promise<Profile | null> => {
   const term = username.replace('@', '').toLowerCase().trim();
   const { data, error } = await supabase

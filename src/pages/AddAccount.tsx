@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Plus, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { createAccount, isUsernameUnique } from "@/lib/firestoreService";
+import { isUsernameUnique, updateProfile } from "@/lib/supabaseService";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const AddAccount = () => {
@@ -12,16 +13,28 @@ const AddAccount = () => {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleAddAccount = async () => {
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+      setUserId(user.id);
+    };
+    checkAuth();
+  }, [navigate]);
+
+  const handleUpdateProfile = async () => {
     if (!phoneNumber.trim() || !name.trim() || !username.trim()) {
       toast.error("Please fill in all fields");
       return;
     }
 
-    const oderId = localStorage.getItem('firebaseUserId');
-    if (!oderId) {
+    if (!userId) {
       toast.error("Please login first");
       navigate("/auth");
       return;
@@ -47,23 +60,17 @@ const AddAccount = () => {
 
       const fullPhoneNumber = `+251${phoneNumber.replace(/\s/g, '')}`;
       
-      await createAccount({
-        oderId,
+      await updateProfile(userId, {
         username: normalizedUsername,
         name: name.trim(),
-        phoneNumber: fullPhoneNumber,
-        isActive: false
+        phone_number: fullPhoneNumber,
       });
       
-      toast.success(`${name} has been added successfully`);
+      toast.success("Profile updated successfully");
       navigate("/settings");
     } catch (error: unknown) {
-      console.error('Error adding account:', error);
-      if (error instanceof Error && error.message === 'Username already taken') {
-        toast.error("Username already taken. Please choose another.");
-      } else {
-        toast.error("Failed to add account");
-      }
+      console.error('Error updating profile:', error);
+      toast.error("Failed to update profile");
     } finally {
       setLoading(false);
     }
@@ -75,7 +82,7 @@ const AddAccount = () => {
         <Button variant="ghost" size="icon" onClick={() => navigate("/settings")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <h1 className="text-lg font-semibold text-foreground">Add Account</h1>
+        <h1 className="text-lg font-semibold text-foreground">Update Profile</h1>
         <div className="w-10" />
       </div>
 
@@ -85,10 +92,10 @@ const AddAccount = () => {
             <Plus className="h-8 w-8 text-primary" />
           </div>
           <h2 className="text-2xl font-bold text-foreground">
-            Add New Account
+            Update Your Profile
           </h2>
           <p className="text-muted-foreground">
-            Enter account details for the new account
+            Enter your profile details
           </p>
         </div>
 
@@ -96,11 +103,11 @@ const AddAccount = () => {
           <Card className="p-4 space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">
-                Account Name
+                Display Name
               </label>
               <Input
                 type="text"
-                placeholder="Enter account name"
+                placeholder="Enter your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full"
@@ -161,19 +168,19 @@ const AddAccount = () => {
 
       <div className="p-6">
         <Button 
-          onClick={handleAddAccount}
+          onClick={handleUpdateProfile}
           disabled={!phoneNumber.trim() || !name.trim() || !username.trim() || loading}
           className="w-full h-12 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
           {loading ? (
             <>
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Adding...
+              Updating...
             </>
           ) : (
             <>
               <User className="h-5 w-5 mr-2" />
-              Add Account
+              Update Profile
             </>
           )}
         </Button>

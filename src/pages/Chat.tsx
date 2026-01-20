@@ -409,9 +409,6 @@ const Chat = () => {
                   timestamp={message.timestamp}
                   isOwn={message.isOwn}
                   status={message.status === 'sending' ? 'sent' : message.status}
-                  type={message.type}
-                  mediaUrl={message.mediaUrl}
-                  fileName={message.fileName}
                 />
               </div>
             )}
