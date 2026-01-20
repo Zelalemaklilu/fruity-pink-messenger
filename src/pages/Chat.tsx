@@ -130,9 +130,13 @@ const Chat = () => {
 
   // Subscribe to messages
   useEffect(() => {
-    if (!chatId || chatError || !chatInfo) return;
+    if (!chatId || chatError || !chatInfo || !currentUserId) return;
+    
+    console.log('[Chat] Subscribing to messages for chat:', chatId);
     
     const channel = subscribeToMessages(chatId, (supabaseMessages) => {
+      console.log('[Chat] Received messages:', supabaseMessages.length);
+      
       const displayMessages: MessageDisplay[] = supabaseMessages.map((msg: SupabaseMessage) => ({
         id: msg.id,
         text: msg.content || "",
@@ -147,13 +151,19 @@ const Chat = () => {
       setMessages(displayMessages);
       setLoading(false);
       
-      // Scroll to bottom
-      setTimeout(() => {
-        virtuosoRef.current?.scrollToIndex({ index: displayMessages.length - 1, behavior: 'smooth' });
-      }, 100);
+      // Scroll to bottom after messages load
+      if (displayMessages.length > 0) {
+        setTimeout(() => {
+          virtuosoRef.current?.scrollToIndex({ 
+            index: displayMessages.length - 1, 
+            behavior: 'smooth' 
+          });
+        }, 100);
+      }
     });
 
     return () => {
+      console.log('[Chat] Unsubscribing from messages');
       supabase.removeChannel(channel);
     };
   }, [chatId, chatError, chatInfo, currentUserId]);
@@ -398,37 +408,41 @@ const Chat = () => {
       )}
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center flex-1">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center flex-1">
             <p className="text-muted-foreground">No messages yet. Say hello!</p>
           </div>
         ) : (
-          <Virtuoso
-            ref={virtuosoRef}
-            style={{ height: '100%' }}
-            data={messages}
-            itemContent={(index, message) => (
-              <div className="px-4 py-1">
-                <MessageBubble
-                  message={message.text}
-                  timestamp={message.timestamp}
-                  isOwn={message.isOwn}
-                  status={message.status === 'sending' ? 'sent' : message.status}
-                  type={message.type}
-                  mediaUrl={message.mediaUrl}
-                  fileName={message.fileName}
-                  onDelete={message.isOwn ? () => handleDeleteMessage(message.id) : undefined}
-                />
-              </div>
-            )}
-            followOutput="smooth"
-            initialTopMostItemIndex={messages.length - 1}
-          />
+          <div className="flex-1 min-h-0">
+            <Virtuoso
+              ref={virtuosoRef}
+              style={{ height: '100%', width: '100%' }}
+              data={messages}
+              overscan={200}
+              itemContent={(index, message) => (
+                <div className="px-4 py-1">
+                  <MessageBubble
+                    message={message.text}
+                    timestamp={message.timestamp}
+                    isOwn={message.isOwn}
+                    status={message.status === 'sending' ? 'sent' : message.status}
+                    type={message.type}
+                    mediaUrl={message.mediaUrl}
+                    fileName={message.fileName}
+                    onDelete={message.isOwn ? () => handleDeleteMessage(message.id) : undefined}
+                  />
+                </div>
+              )}
+              followOutput="smooth"
+              initialTopMostItemIndex={messages.length - 1}
+              alignToBottom
+            />
+          </div>
         )}
       </div>
 
