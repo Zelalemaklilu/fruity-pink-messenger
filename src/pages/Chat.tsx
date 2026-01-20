@@ -174,17 +174,37 @@ const Chat = () => {
 
   // Subscribe to real-time messages (only after chat is validated)
   useEffect(() => {
-    if (!chatId || chatError || !chatInfo) return;
+    if (!chatId || chatError || !chatInfo) {
+      console.log("[CHAT DEBUG] Subscription blocked:", { chatId, chatError, hasChatInfo: !!chatInfo });
+      return;
+    }
     
     const currentUserId = getCurrentUserId();
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      console.log("[CHAT DEBUG] No currentUserId - subscription blocked");
+      return;
+    }
 
-    console.log("Subscribing to messages for chat:", chatId);
-    console.log("Chat participants:", chatInfo.participants);
+    console.log("[CHAT DEBUG] ✅ Starting subscription for chatId:", chatId);
+    console.log("[CHAT DEBUG] Chat participants:", chatInfo.participants);
+    console.log("[CHAT DEBUG] Current user ID:", currentUserId);
     
     const unsubscribe = subscribeToMessages(
       chatId, 
       (firestoreMessages) => {
+        console.log("[CHAT DEBUG] 📩 Firestore returned", firestoreMessages.length, "messages");
+        
+        // Log each message for debugging
+        firestoreMessages.forEach((msg, i) => {
+          console.log(`[CHAT DEBUG] MSG ${i}:`, {
+            id: msg.id,
+            senderId: msg.senderId,
+            text: (msg as any).text?.substring(0, 30) || (msg as any).content?.substring(0, 30),
+            createdAt: msg.createdAt ? 'exists' : 'MISSING',
+            type: msg.type
+          });
+        });
+        
         const displayMessages: MessageDisplay[] = firestoreMessages.map((msg: FirestoreMessage) => {
           // Backward/strict-schema compatibility:
           // - Some older docs may have `text` instead of `content`
@@ -206,6 +226,8 @@ const Chat = () => {
             fileName: msg.fileName
           };
         });
+        
+        console.log("[CHAT DEBUG] 🎨 Setting", displayMessages.length, "messages for UI render");
         setMessages(displayMessages);
         setLoading(false);
         
@@ -215,13 +237,16 @@ const Chat = () => {
         }, 100);
       },
       (error) => {
-        console.error("Message subscription failed:", error);
+        console.error("[CHAT DEBUG] ❌ Message subscription FAILED:", error);
         setChatError("Failed to load messages. Security rules may be blocking access.");
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      console.log("[CHAT DEBUG] 🛑 Unsubscribing from chat:", chatId);
+      unsubscribe();
+    };
   }, [chatId, chatError, chatInfo, getCurrentUserId]);
 
   const handleSendMessage = async () => {
@@ -493,41 +518,54 @@ const Chat = () => {
         </div>
       )}
 
-      {/* Messages with Virtualization */}
-      <div className="flex-1 min-h-0">
+      {/* Messages with Virtualization - CRITICAL: explicit height for Virtuoso */}
+      <div className="flex-1 min-h-0 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
+        ) : messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <p>No messages yet. Start a conversation!</p>
+          </div>
         ) : (
-          <Virtuoso
-            ref={virtuosoRef}
-            className="h-full"
-            data={messages}
-            initialTopMostItemIndex={Math.max(messages.length - 1, 0)}
-            followOutput="smooth"
-            itemContent={(_, message) => (
-              <div className="px-4 py-1">
-                {message.type === "image" && message.mediaUrl ? (
-                  <div className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[70%] rounded-2xl overflow-hidden ${message.isOwn ? 'bg-primary' : 'bg-muted'}`}>
-                      <img src={message.mediaUrl} alt="Shared" className="w-full h-auto max-h-64 object-cover cursor-pointer" onClick={() => window.open(message.mediaUrl, '_blank')} />
-                      <div className="px-3 py-1.5 text-xs text-muted-foreground">{message.timestamp}</div>
-                    </div>
+          <>
+            {/* DEBUG: Show message count */}
+            {console.log("[CHAT RENDER] Rendering Virtuoso with", messages.length, "messages")}
+            <Virtuoso
+              ref={virtuosoRef}
+              style={{ height: '100%' }}
+              className="h-full overflow-y-auto"
+              data={messages}
+              initialTopMostItemIndex={Math.max(messages.length - 1, 0)}
+              followOutput="smooth"
+              itemContent={(index, message) => {
+                // Log first render to confirm items are being rendered
+                if (index === 0) console.log("[CHAT RENDER] First message rendered:", message.id);
+                return (
+                  <div className="px-4 py-1">
+                    {message.type === "image" && message.mediaUrl ? (
+                      <div className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] rounded-2xl overflow-hidden ${message.isOwn ? 'bg-primary' : 'bg-muted'}`}>
+                          <img src={message.mediaUrl} alt="Shared" className="w-full h-auto max-h-64 object-cover cursor-pointer" onClick={() => window.open(message.mediaUrl, '_blank')} />
+                          <div className="px-3 py-1.5 text-xs text-muted-foreground">{message.timestamp}</div>
+                        </div>
+                      </div>
+                    ) : message.type === "file" && message.mediaUrl ? (
+                      <div className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] rounded-2xl p-3 cursor-pointer ${message.isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => window.open(message.mediaUrl, '_blank')}>
+                          <div className="flex items-center gap-2"><File className="h-5 w-5" /><span className="truncate">{message.fileName || 'File'}</span></div>
+                          <div className="text-xs opacity-70 mt-1">{message.timestamp}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <MessageBubble message={message.text} timestamp={message.timestamp} isOwn={message.isOwn} status={message.status === 'sending' ? 'sent' : message.status} />
+                    )}
                   </div>
-                ) : message.type === "file" && message.mediaUrl ? (
-                  <div className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[70%] rounded-2xl p-3 cursor-pointer ${message.isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => window.open(message.mediaUrl, '_blank')}>
-                      <div className="flex items-center gap-2"><File className="h-5 w-5" /><span className="truncate">{message.fileName || 'File'}</span></div>
-                      <div className="text-xs opacity-70 mt-1">{message.timestamp}</div>
-                    </div>
-                  </div>
-                ) : (
-                  <MessageBubble message={message.text} timestamp={message.timestamp} isOwn={message.isOwn} status={message.status === 'sending' ? 'sent' : message.status} />
-                )}
-              </div>
-            )}
-          />
+                );
+              }}
+            />
+          </>
         )}
       </div>
 
