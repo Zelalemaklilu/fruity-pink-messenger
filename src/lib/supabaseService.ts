@@ -386,6 +386,19 @@ export const updateMessageStatus = async (
   }
 };
 
+export const deleteMessage = async (messageId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', messageId);
+
+  if (error) {
+    console.error('Error deleting message:', error);
+    return false;
+  }
+  return true;
+};
+
 export const markMessagesAsRead = async (
   chatId: string,
   receiverId: string
