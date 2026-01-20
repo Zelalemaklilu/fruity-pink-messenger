@@ -1,150 +1,34 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Switch } from "@/components/ui/switch";
 import { useNavigate } from "react-router-dom";
-import { getAccountsByUserId, setActiveAccount, Account } from "@/lib/firestoreService";
-import { logOut } from "@/lib/firebaseAuth";
+import { getProfile, Profile } from "@/lib/supabaseService";
+import { signOut } from "@/lib/supabaseAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { requestNotificationPermission, getNotificationPermissionStatus, isNotificationSupported, onForegroundMessage, initializeMessaging } from "@/lib/firebaseMessaging";
 
 const Settings = () => {
   const navigate = useNavigate();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [notificationLoading, setNotificationLoading] = useState(false);
 
   useEffect(() => {
-    loadAccounts();
-    checkNotificationStatus();
+    loadProfile();
   }, []);
 
-  const checkNotificationStatus = () => {
-    const status = getNotificationPermissionStatus();
-    setNotificationsEnabled(status === 'granted');
-  };
-
-  const handleToggleNotifications = async () => {
-    if (!isNotificationSupported()) {
-      toast.error("Notifications not supported in this browser");
-      return;
-    }
-
-    setNotificationLoading(true);
-    
-    if (!notificationsEnabled) {
-      try {
-        await initializeMessaging();
-        const token = await requestNotificationPermission();
-        if (token) {
-          setNotificationsEnabled(true);
-          // Set up foreground message listener
-          onForegroundMessage((payload) => {
-            console.log('Notification received:', payload);
-          });
-          toast.success("Notifications enabled!");
-        } else {
-          toast.error("Permission denied. Please enable in browser settings.");
-        }
-      } catch (error) {
-        console.error('Error enabling notifications:', error);
-        toast.error("Failed to enable notifications");
-      }
-    } else {
-      toast.info("To disable notifications, please update your browser settings");
-    }
-    
-    setNotificationLoading(false);
-  };
-
-  const loadAccounts = async () => {
+  const loadProfile = async () => {
     try {
-      const userId = localStorage.getItem('firebaseUserId');
-      if (!userId) {
-        setLoading(false);
-        return;
-      }
-
-      let userAccounts = await getAccountsByUserId(userId);
+      const { data: { user } } = await supabase.auth.getUser();
       
-      // SELF-HEALING: If no accounts found, create one automatically
-      if (userAccounts.length === 0) {
-        console.log("Settings: No account found, creating self-healing profile...");
-        const { auth } = await import("@/lib/firebase");
-        const { createAccount } = await import("@/lib/firestoreService");
-        
-        const user = auth.currentUser;
-        if (user) {
-          const emailPrefix = user.email?.split('@')[0] || 'user';
-          const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-          const uniqueUsername = `${baseUsername}${randomSuffix}`;
-          
-          try {
-            await createAccount({
-              oderId: userId,
-              username: uniqueUsername,
-              email: user.email || '',
-              name: `User ${emailPrefix}`,
-              phoneNumber: user.email || '',
-              isActive: true
-            });
-            console.log("Settings: Self-healing profile created:", uniqueUsername);
-            
-            // Re-fetch accounts after creation
-            userAccounts = await getAccountsByUserId(userId);
-          } catch (createError) {
-            console.error("Settings: Failed to create self-healing profile:", createError);
-            // Create a local fallback account for display
-            userAccounts = [{
-              id: 'local-temp',
-              oderId: userId,
-              username: uniqueUsername,
-              email: user.email || '',
-              name: `User ${emailPrefix}`,
-              phoneNumber: user.email || '',
-              isActive: true
-            }];
-          }
-        }
-      }
-      
-      setAccounts(userAccounts);
-      
-      // Find active account
-      const active = userAccounts.find(acc => acc.isActive);
-      if (active?.id) {
-        setActiveAccountId(active.id);
-      } else if (userAccounts.length > 0 && userAccounts[0].id) {
-        setActiveAccountId(userAccounts[0].id);
+      if (user) {
+        const userProfile = await getProfile(user.id);
+        setProfile(userProfile);
       }
     } catch (error) {
-      console.error('Error loading accounts:', error);
-      
-      // FALLBACK: Show local temp account if Firestore fails completely
-      const userId = localStorage.getItem('firebaseUserId');
-      const { auth } = await import("@/lib/firebase");
-      const user = auth.currentUser;
-      
-      if (user && userId) {
-        const emailPrefix = user.email?.split('@')[0] || 'user';
-        const tempAccount: Account = {
-          id: 'local-fallback',
-          oderId: userId,
-          username: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, ''),
-          email: user.email || '',
-          name: `User ${emailPrefix}`,
-          phoneNumber: user.email || '',
-          isActive: true
-        };
-        setAccounts([tempAccount]);
-        setActiveAccountId('local-fallback');
-      }
+      console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
     }
@@ -153,8 +37,7 @@ const Settings = () => {
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      await logOut();
-      localStorage.removeItem('firebaseUserId');
+      await signOut();
       toast.success("Logged out successfully");
       window.location.href = '/';
     } catch (error) {
@@ -201,27 +84,6 @@ const Settings = () => {
     }
   };
 
-  const handleAddAccount = () => {
-    navigate("/add-account");
-  };
-
-  const handleSwitchAccount = async (accountId: string) => {
-    try {
-      const userId = localStorage.getItem('firebaseUserId');
-      if (!userId || !accountId) return;
-
-      await setActiveAccount(userId, accountId);
-      setActiveAccountId(accountId);
-      
-      // Reload accounts to reflect changes
-      await loadAccounts();
-      toast.success("Account switched");
-    } catch (error) {
-      console.error('Error switching account:', error);
-      toast.error("Failed to switch account");
-    }
-  };
-
   const menuItems = [
     { icon: User, label: "My Profile", color: "text-primary" },
     { icon: Wallet, label: "Wallet", color: "text-green-500" },
@@ -250,62 +112,47 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* User Accounts Section */}
+      {/* User Profile Section */}
       <div className="p-4">
         <Card className="p-6 space-y-4 bg-card border-border">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-foreground">Accounts</h3>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              className="text-primary hover:bg-primary/10"
-              onClick={handleAddAccount}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add
-            </Button>
+            <h3 className="text-lg font-semibold text-foreground">Account</h3>
           </div>
 
           {loading ? (
             <div className="flex justify-center py-4">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
-          ) : accounts.length === 0 ? (
-            <p className="text-center text-muted-foreground py-4">No accounts found</p>
-          ) : (
-            accounts.map((account) => (
-              <div 
-                key={account.id}
-                className={`flex items-center space-x-4 p-3 rounded-lg border cursor-pointer transition-smooth ${
-                  activeAccountId === account.id 
-                    ? 'border-primary bg-primary/5' 
-                    : 'border-border hover:bg-accent/50'
-                }`}
-                onClick={() => account.id && handleSwitchAccount(account.id)}
-              >
-                <Avatar className="h-12 w-12 border border-primary/20">
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {account.name.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-foreground">
-                    {account.name}
-                  </h4>
-                  <p className="text-primary text-sm font-medium">
-                    @{account.username}
-                  </p>
-                  <p className="text-muted-foreground text-xs">
-                    {account.email || account.phoneNumber}
-                  </p>
-                </div>
-
-                {activeAccountId === account.id && (
-                  <Check className="h-5 w-5 text-primary" />
-                )}
+          ) : profile ? (
+            <div 
+              className="flex items-center space-x-4 p-3 rounded-lg border border-primary bg-primary/5 cursor-pointer"
+              onClick={() => navigate('/profile')}
+            >
+              <Avatar className="h-12 w-12 border border-primary/20">
+                {profile.avatar_url ? (
+                  <AvatarImage src={profile.avatar_url} alt={profile.name || ''} />
+                ) : null}
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {(profile.name || 'U').slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold text-foreground">
+                  {profile.name || 'User'}
+                </h4>
+                <p className="text-primary text-sm font-medium">
+                  @{profile.username}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {profile.email}
+                </p>
               </div>
-            ))
+
+              <Check className="h-5 w-5 text-primary" />
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-4">Not logged in</p>
           )}
         </Card>
       </div>
@@ -326,30 +173,6 @@ const Settings = () => {
             </div>
           </Card>
         ))}
-      </div>
-
-      {/* Notification Settings */}
-      <div className="p-4">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className={`p-2 rounded-lg bg-muted ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'}`}>
-                {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-              </div>
-              <div>
-                <span className="font-medium text-foreground">Push Notifications</span>
-                <p className="text-xs text-muted-foreground">
-                  {notificationsEnabled ? 'Enabled' : 'Disabled'}
-                </p>
-              </div>
-            </div>
-            <Switch
-              checked={notificationsEnabled}
-              onCheckedChange={handleToggleNotifications}
-              disabled={notificationLoading}
-            />
-          </div>
-        </Card>
       </div>
 
       {/* Logout Section */}

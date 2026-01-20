@@ -10,16 +10,17 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { AccountStore } from "@/lib/accountStore";
-import { getAccountsByoderId, updateAccount, isUsernameUnique, createAccount, Account } from "@/lib/firestoreService";
-import { auth } from "@/lib/firebase";
+import { getProfile, updateProfile, Profile as ProfileType } from "@/lib/supabaseService";
+import { isUsernameUnique } from "@/lib/supabaseAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const Profile = () => {
   const navigate = useNavigate();
-  const [account, setAccount] = useState<Account | null>(null);
+  const [profile, setProfile] = useState<ProfileType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   
   // Edit form state
   const [editName, setEditName] = useState("");
@@ -28,89 +29,33 @@ const Profile = () => {
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
 
   useEffect(() => {
-    loadAccount();
+    loadProfile();
   }, []);
 
-  const loadAccount = async () => {
+  const loadProfile = async () => {
     setLoading(true);
-    const oderId = auth.currentUser?.uid || localStorage.getItem("firebaseUserId");
     
-    if (oderId) {
-      try {
-        let accounts = await getAccountsByoderId(oderId);
-        
-        // SELF-HEALING: Create profile if missing
-        if (accounts.length === 0 && auth.currentUser) {
-          console.log("Profile: No account found, creating self-healing profile...");
-          const user = auth.currentUser;
-          const emailPrefix = user.email?.split('@')[0] || 'user';
-          const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-          const uniqueUsername = `${baseUsername}${randomSuffix}`;
-          
-          try {
-            await createAccount({
-              oderId: oderId,
-              username: uniqueUsername,
-              email: user.email || '',
-              name: `User ${emailPrefix}`,
-              phoneNumber: user.email || '',
-              isActive: true
-            });
-            console.log("Profile: Self-healing profile created:", uniqueUsername);
-            accounts = await getAccountsByoderId(oderId);
-          } catch (createError) {
-            console.error("Profile: Self-healing failed:", createError);
-            // Create local fallback
-            accounts = [{
-              id: 'local-temp',
-              oderId: oderId,
-              username: uniqueUsername,
-              email: user.email || '',
-              name: `User ${emailPrefix}`,
-              phoneNumber: user.email || '',
-              isActive: true
-            }];
-          }
-        }
-        
-        if (accounts.length > 0) {
-          const activeAccount = accounts.find(acc => acc.isActive) || accounts[0];
-          setAccount(activeAccount);
-          setEditName(activeAccount.name);
-          setEditUsername(activeAccount.username || '');
-          setEditBio(activeAccount.bio || "");
-          setEditAvatarUrl(activeAccount.avatarUrl || activeAccount.photoURL || "");
-        }
-      } catch (error) {
-        console.error("Error loading Firestore account:", error);
-        // Fallback using auth user data
-        const user = auth.currentUser;
-        if (user) {
-          const emailPrefix = user.email?.split('@')[0] || 'user';
-          const fallbackAccount: Account = {
-            id: 'local-fallback',
-            oderId: oderId,
-            username: emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, ''),
-            email: user.email || '',
-            name: `User ${emailPrefix}`,
-            phoneNumber: user.email || '',
-            isActive: true
-          };
-          setAccount(fallbackAccount);
-          setEditName(fallbackAccount.name);
-          setEditUsername(fallbackAccount.username);
-          setEditBio("");
-          setEditAvatarUrl("");
-        }
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      setCurrentUserId(user.id);
+      const userProfile = await getProfile(user.id);
+      
+      if (userProfile) {
+        setProfile(userProfile);
+        setEditName(userProfile.name || "");
+        setEditUsername(userProfile.username || "");
+        setEditBio(userProfile.bio || "");
+        setEditAvatarUrl(userProfile.avatar_url || "");
       }
     }
+    
     setLoading(false);
   };
 
   const handleSaveProfile = async () => {
-    if (!account?.id) {
-      toast.error("No account found");
+    if (!currentUserId) {
+      toast.error("Not authenticated");
       return;
     }
 
@@ -134,8 +79,8 @@ const Profile = () => {
       const normalizedUsername = editUsername.toLowerCase().trim().replace(/\s/g, '');
       
       // Check if username changed and if new one is unique
-      if (normalizedUsername !== account.username) {
-        const isUnique = await isUsernameUnique(normalizedUsername, account.oderId);
+      if (normalizedUsername !== profile?.username) {
+        const isUnique = await isUsernameUnique(normalizedUsername);
         if (!isUnique) {
           toast.error("Username already taken. Please choose another.");
           setSaving(false);
@@ -143,51 +88,25 @@ const Profile = () => {
         }
       }
 
-      await updateAccount(account.id, {
+      const updatedProfile = await updateProfile(currentUserId, {
         name: editName.trim(),
         username: normalizedUsername,
         bio: editBio.trim(),
-        avatarUrl: editAvatarUrl.trim(),
-        photoURL: editAvatarUrl.trim()
+        avatar_url: editAvatarUrl.trim()
       });
 
-      setAccount({
-        ...account,
-        name: editName.trim(),
-        username: normalizedUsername,
-        bio: editBio.trim(),
-        avatarUrl: editAvatarUrl.trim(),
-        photoURL: editAvatarUrl.trim()
-      });
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+      }
 
       setEditDialogOpen(false);
       toast.success("Profile updated successfully!");
     } catch (error) {
       console.error("Error updating profile:", error);
-      if (error instanceof Error && error.message === 'Username already taken') {
-        toast.error("Username already taken. Please choose another.");
-      } else {
-        toast.error("Failed to update profile");
-      }
+      toast.error("Failed to update profile");
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleStartChat = () => {
-    navigate("/chats");
-  };
-
-  const handleCall = () => {
-    toast.info("Starting voice call...");
-  };
-
-  const handleViewMedia = () => {
-    toast.info("Opening media gallery...");
-  };
-
-  const handleMoreOptions = () => {
-    navigate("/settings");
   };
 
   if (loading) {
@@ -198,12 +117,11 @@ const Profile = () => {
     );
   }
 
-  const displayName = account?.name || "User";
-  const displayUsername = account?.username || displayName.toLowerCase().replace(/\s/g, '');
-  const displayPhone = account?.phoneNumber || account?.email || "";
-  const displayBio = account?.bio || "Welcome to Zeshopp! 🚀";
-  const displayAvatar = account?.avatarUrl || account?.photoURL || "";
-  const isEmail = displayPhone.includes("@");
+  const displayName = profile?.name || "User";
+  const displayUsername = profile?.username || "user";
+  const displayEmail = profile?.email || "";
+  const displayBio = profile?.bio || "Welcome to Zeshopp! 🚀";
+  const displayAvatar = profile?.avatar_url || "";
 
   return (
     <div className="min-h-screen bg-background">
@@ -220,7 +138,7 @@ const Profile = () => {
             </Button>
             <h1 className="text-lg font-semibold">Profile</h1>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleMoreOptions}>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/settings")}>
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
@@ -247,7 +165,6 @@ const Profile = () => {
               />
             )}
             
-            {/* Edit Button on Avatar */}
             <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
               <DialogTrigger asChild>
                 <Button 
@@ -280,7 +197,6 @@ const Profile = () => {
                     </div>
                   </div>
 
-                  {/* Avatar URL Input */}
                   <div className="space-y-2">
                     <Label htmlFor="avatarUrl">Profile Photo URL</Label>
                     <Input
@@ -289,12 +205,8 @@ const Profile = () => {
                       value={editAvatarUrl}
                       onChange={(e) => setEditAvatarUrl(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Enter a URL for your profile photo
-                    </p>
                   </div>
 
-                  {/* Name Input */}
                   <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <Input
@@ -306,7 +218,6 @@ const Profile = () => {
                     />
                   </div>
 
-                  {/* Username Input */}
                   <div className="space-y-2">
                     <Label htmlFor="username">Username (unique)</Label>
                     <div className="flex items-center">
@@ -322,12 +233,8 @@ const Profile = () => {
                         maxLength={30}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Must be unique. Others can find you with this.
-                    </p>
                   </div>
 
-                  {/* Bio Input */}
                   <div className="space-y-2">
                     <Label htmlFor="bio">Bio</Label>
                     <Textarea
@@ -343,7 +250,6 @@ const Profile = () => {
                     </p>
                   </div>
 
-                  {/* Save Button */}
                   <Button 
                     onClick={handleSaveProfile}
                     disabled={saving}
@@ -367,9 +273,7 @@ const Profile = () => {
 
       <div className="pt-20 pb-6 text-center space-y-3 px-4">
         <h2 className="text-2xl font-bold text-foreground">{displayName}</h2>
-        <p className="text-muted-foreground font-medium">
-          @{displayUsername}
-        </p>
+        <p className="text-muted-foreground font-medium">@{displayUsername}</p>
         <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">
           {displayBio}
         </p>
@@ -380,7 +284,7 @@ const Profile = () => {
         <div className="grid grid-cols-2 gap-3">
           <Button 
             className="h-12 bg-gradient-primary hover:opacity-90 transition-smooth rounded-xl font-semibold"
-            onClick={handleStartChat}
+            onClick={() => navigate("/chats")}
           >
             <MessageSquare className="h-5 w-5 mr-2" />
             Chats
@@ -388,7 +292,7 @@ const Profile = () => {
           <Button 
             variant="outline" 
             className="h-12 rounded-xl font-semibold border-2 hover:bg-accent/10"
-            onClick={handleCall}
+            onClick={() => toast.info("Starting voice call...")}
           >
             <Phone className="h-5 w-5 mr-2" />
             Call
@@ -413,8 +317,8 @@ const Profile = () => {
           </div>
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2">
-              <span className="text-muted-foreground">{isEmail ? "Email" : "Phone"}</span>
-              <span className="text-foreground font-medium">{displayPhone}</span>
+              <span className="text-muted-foreground">Email</span>
+              <span className="text-foreground font-medium">{displayEmail}</span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Username</span>
@@ -449,7 +353,7 @@ const Profile = () => {
           <Button 
             variant="ghost" 
             className="w-full text-primary hover:bg-primary/10 font-medium"
-            onClick={handleViewMedia}
+            onClick={() => toast.info("Opening media gallery...")}
           >
             <Images className="h-4 w-4 mr-2" />
             View all media
