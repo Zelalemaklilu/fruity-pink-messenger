@@ -7,9 +7,6 @@ import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
-import OTP from "./pages/OTP";
-import EmailVerification from "./pages/EmailVerification";
-import ForgotPassword from "./pages/ForgotPassword";
 import Chats from "./pages/Chats";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
@@ -29,129 +26,91 @@ import TransactionHistory from "./pages/TransactionHistory";
 import TransactionReceipt from "./pages/TransactionReceipt";
 import TransactionDetail from "./pages/TransactionDetail";
 import AddAccount from "./pages/AddAccount";
+import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
-import { subscribeToAuthState } from "./lib/firebaseAuth";
-import { getAccountsByoderId, createAccount } from "./lib/firestoreService";
+import { supabase } from "@/integrations/supabase/client";
+import { updateOnlineStatus } from "@/lib/supabaseService";
 import logoImage from "@/assets/zeshopp-logo.jpg";
+import type { User } from "@supabase/supabase-js";
 
 const queryClient = new QueryClient();
 
 const AppRoutes = () => {
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
-  const [profileReady, setProfileReady] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   
-  // Track if self-healing has been attempted to prevent loops
-  const selfHealingAttempted = useRef<string | null>(null);
   const loginToastShownRef = useRef(false);
   const redirectToChatsDoneRef = useRef(false);
 
-  const isAuthenticated = authState === 'authenticated' && profileReady;
+  const isAuthenticated = authState === 'authenticated';
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // HOOK 1: Auth state subscription (Firebase listener)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Auth state subscription
   useEffect(() => {
-    const unsubscribe = subscribeToAuthState(async (user) => {
-      // Ensure emailVerified is up-to-date
-      if (user) {
-        try {
-          await user.reload();
-        } catch (e) {
-          console.warn("App.tsx: user.reload() failed (non-blocking):", e);
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log("[Auth] State change:", event, session?.user?.id);
+        
+        if (session?.user) {
+          setUser(session.user);
+          setAuthState('authenticated');
+          
+          // Update online status (non-blocking)
+          updateOnlineStatus(session.user.id, true).catch(console.warn);
+        } else {
+          setUser(null);
+          setAuthState('unauthenticated');
+          loginToastShownRef.current = false;
+          redirectToChatsDoneRef.current = false;
         }
       }
+    );
 
-      if (user && user.emailVerified) {
+    // THEN check existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
         setAuthState('authenticated');
-        setProfileReady(false);
-        localStorage.setItem("authToken", user.uid);
-        localStorage.setItem("firebaseUserId", user.uid);
-        
-        // Only attempt self-healing ONCE per user session
-        if (selfHealingAttempted.current !== user.uid) {
-          selfHealingAttempted.current = user.uid;
-          
-          try {
-            const existingAccounts = await getAccountsByoderId(user.uid);
-            
-            if (existingAccounts.length === 0) {
-              console.log("App.tsx Self-healing: Creating missing profile for:", user.uid);
-              
-              const emailPrefix = user.email?.split('@')[0] || 'user';
-              const baseUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, '');
-              const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-              const uniqueUsername = `${baseUsername}${randomSuffix}`;
-              
-              await createAccount({
-                oderId: user.uid,
-                username: uniqueUsername,
-                email: user.email || '',
-                name: `User ${emailPrefix}`,
-                phoneNumber: user.email || '',
-                isActive: true
-              });
-              
-              console.log("App.tsx Self-healing: Profile created with username:", uniqueUsername);
-            }
-          } catch (error) {
-            console.error("App.tsx Self-healing failed (non-blocking):", error);
-          }
-        }
-        
-        setProfileReady(true);
-      } else if (user && !user.emailVerified) {
-        setAuthState('unauthenticated');
-        setProfileReady(false);
-        localStorage.removeItem("authToken");
-        loginToastShownRef.current = false;
-        redirectToChatsDoneRef.current = false;
+        updateOnlineStatus(session.user.id, true).catch(console.warn);
       } else {
         setAuthState('unauthenticated');
-        setProfileReady(false);
-        localStorage.removeItem("authToken");
-        localStorage.removeItem("firebaseUserId");
-        selfHealingAttempted.current = null;
-        loginToastShownRef.current = false;
-        redirectToChatsDoneRef.current = false;
       }
     });
-    
-    return () => unsubscribe();
+
+    // Cleanup: set offline on unmount
+    return () => {
+      subscription.unsubscribe();
+      if (user?.id) {
+        updateOnlineStatus(user.id, false).catch(console.warn);
+      }
+    };
   }, []);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // HOOK 2: Post-login toast & redirect (runs AFTER auth state settles)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Post-login toast & redirect
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Toast only once per authenticated session
     if (!loginToastShownRef.current) {
       toast.success("Login successful");
       loginToastShownRef.current = true;
     }
 
-    // Redirect to /chats only once, and never if we're already there
     if (redirectToChatsDoneRef.current) return;
     if (location.pathname === "/chats") {
       redirectToChatsDoneRef.current = true;
       return;
     }
 
-    const publicPaths = new Set(["/", "/auth", "/otp", "/email-verification", "/forgot-password"]);
+    const publicPaths = new Set(["/", "/auth", "/forgot-password"]);
     if (publicPaths.has(location.pathname)) {
       redirectToChatsDoneRef.current = true;
       navigate("/chats", { replace: true });
     }
   }, [isAuthenticated, location.pathname, navigate]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // RENDER: Loading states (shown AFTER all hooks have been declared)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  // Loading screen while checking auth
+  // Loading screen
   if (authState === 'loading') {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
@@ -181,23 +140,6 @@ const AppRoutes = () => {
     );
   }
 
-  // Preparing account screen (self-healing in progress)
-  if (authState === 'authenticated' && !profileReady) {
-    return (
-      <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
-        <div className="text-center space-y-4 animate-in fade-in-0 duration-500">
-          <div className="w-16 h-16 rounded-2xl bg-background/40 border border-border/40 shadow-primary mx-auto flex items-center justify-center">
-            <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-foreground">Preparing your account</h1>
-            <p className="text-sm text-muted-foreground">Just a moment…</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <Routes location={location}>
       <Route path="/" element={
@@ -205,12 +147,6 @@ const AppRoutes = () => {
       } />
       <Route path="/auth" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <Auth />
-      } />
-      <Route path="/otp" element={
-        isAuthenticated ? <Navigate to="/chats" replace /> : <OTP />
-      } />
-      <Route path="/email-verification" element={
-        isAuthenticated ? <Navigate to="/chats" replace /> : <EmailVerification />
       } />
       <Route path="/forgot-password" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <ForgotPassword />

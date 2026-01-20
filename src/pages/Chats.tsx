@@ -9,11 +9,12 @@ import {
   subscribeToChats, 
   searchByUsername, 
   findOrCreateChat,
-  getAccountByoderId,
-  Chat as FirestoreChat 
-} from "@/lib/firestoreService";
-import { auth } from "@/lib/firebase";
-import { Timestamp } from "firebase/firestore";
+  getProfile,
+  getUnreadCount,
+  Chat as SupabaseChat,
+  Profile
+} from "@/lib/supabaseService";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface ChatDisplay {
@@ -24,11 +25,12 @@ interface ChatDisplay {
   unreadCount: number;
   avatar?: string;
   status: "online" | "away" | "offline";
+  otherUserId: string;
 }
 
-const formatTimestamp = (timestamp?: Timestamp): string => {
+const formatTimestamp = (timestamp?: string): string => {
   if (!timestamp) return "";
-  const date = timestamp.toDate();
+  const date = new Date(timestamp);
   const now = new Date();
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   
@@ -48,77 +50,75 @@ const Chats = () => {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [totalUnread, setTotalUnread] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [profileCache, setProfileCache] = useState<Map<string, Profile>>(new Map());
   const navigate = useNavigate();
-  
-  // CRITICAL: Use Firebase Auth UID directly for chat operations
-  const currentAuthUid = auth.currentUser?.uid || "";
 
-  // Subscribe to real-time chat updates using Auth UID
+  // Get current user ID
   useEffect(() => {
-    if (!currentAuthUid) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    });
+  }, []);
+
+  // Subscribe to real-time chat updates
+  useEffect(() => {
+    if (!currentUserId) {
       setLoading(false);
       return;
     }
 
-    let isMounted = true;
-
-    const unsubscribe = subscribeToChats(
-      currentAuthUid,  // Must be Auth UID for security rules
-      (firestoreChats) => {
-        if (!isMounted) return;
-        
-        const displayChats: ChatDisplay[] = firestoreChats.map((chat: FirestoreChat) => {
-          const idx = chat.participants?.indexOf(currentAuthUid) ?? -1;
-          const otherIdx = idx === 0 ? 1 : 0;
+    const channel = subscribeToChats(currentUserId, async (supabaseChats) => {
+      // Fetch profiles for other participants
+      const displayChats: ChatDisplay[] = await Promise.all(
+        supabaseChats.map(async (chat: SupabaseChat) => {
+          const otherUserId = chat.participant_1 === currentUserId 
+            ? chat.participant_2 
+            : chat.participant_1;
           
-          const name = chat.isGroup 
-            ? (chat.groupName || "Group") 
-            : (chat.participantNames?.[otherIdx] || "Unknown");
-          
-          const avatar = chat.participantAvatars?.[otherIdx] || "";
-          const unreadCount = chat.unreadCount?.[currentAuthUid] || 0;
+          // Check cache first
+          let otherProfile = profileCache.get(otherUserId);
+          if (!otherProfile) {
+            otherProfile = await getProfile(otherUserId) || undefined;
+            if (otherProfile) {
+              setProfileCache(prev => new Map(prev).set(otherUserId, otherProfile!));
+            }
+          }
 
           return {
-            id: chat.id || "",
-            name,
-            lastMessage: chat.lastMessage || "No messages yet",
-            timestamp: formatTimestamp(chat.lastMessageTimestamp || chat.lastMessageAt),
-            unreadCount,
-            avatar,
-            status: "offline" as const
+            id: chat.id,
+            name: otherProfile?.name || otherProfile?.username || "Unknown",
+            lastMessage: chat.last_message || "No messages yet",
+            timestamp: formatTimestamp(chat.last_message_time || undefined),
+            unreadCount: getUnreadCount(chat, currentUserId),
+            avatar: otherProfile?.avatar_url || "",
+            status: otherProfile?.is_online ? "online" as const : "offline" as const,
+            otherUserId
           };
-        });
-        
-        setChats(displayChats);
-        setTotalUnread(displayChats.reduce((sum, chat) => sum + chat.unreadCount, 0));
-        setLoading(false);
-      },
-      // Error callback - stop loading on error
-      () => {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    );
+        })
+      );
+      
+      setChats(displayChats);
+      setTotalUnread(displayChats.reduce((sum, chat) => sum + chat.unreadCount, 0));
+      setLoading(false);
+    });
 
     return () => {
-      isMounted = false;
-      unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [currentAuthUid]);
+  }, [currentUserId, profileCache]);
 
   // Filter chats locally
   const filteredChats = chats.filter(chat =>
     chat.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Handle username search (The Handshake)
-  // CRITICAL: Must use Firebase Auth UIDs for participants, NOT oderId values!
+  // Handle username search
   const handleUsernameSearch = async () => {
-    const currentAuthUid = auth.currentUser?.uid;
-    if (!searchQuery.trim() || !currentAuthUid) return;
+    if (!searchQuery.trim() || !currentUserId) return;
     
-    // Check if it looks like a username search (starts with @)
     const query = searchQuery.trim();
     const isUsernameSearch = query.startsWith('@');
     const usernameToSearch = isUsernameSearch ? query.slice(1) : query;
@@ -127,41 +127,25 @@ const Chats = () => {
 
     setSearching(true);
     try {
-      const foundUser = await searchByUsername(usernameToSearch, currentAuthUid);
+      const foundUser = await searchByUsername(usernameToSearch);
       
       if (!foundUser) {
         toast.error(`No user found with username @${usernameToSearch}`);
         return;
       }
 
-      // Get current user's info
-      const currentUser = await getAccountByoderId(currentAuthUid);
-      if (!currentUser) {
-        toast.error("Please complete your profile first");
+      if (foundUser.id === currentUserId) {
+        toast.error("You can't chat with yourself");
         return;
       }
 
-      // CRITICAL: Use the document ID as the Auth UID
-      // In the schema, document ID = auth.uid (oderId field also stores this)
-      const otherAuthUid = foundUser.id || foundUser.oderId || '';
-      
-      console.log("Creating chat with Auth UIDs:", { currentAuthUid, otherAuthUid });
+      const chatId = await findOrCreateChat(currentUserId, foundUser.id);
 
-      // Find or create chat with Auth UIDs (NOT oderId!)
-      const chatId = await findOrCreateChat(
-        currentAuthUid,  // Firebase Auth UID
-        currentUser.username || '',
-        currentUser.name || '',
-        currentUser.avatarUrl || currentUser.photoURL || '',
-        otherAuthUid,    // Firebase Auth UID (document ID)
-        foundUser.username || '',
-        foundUser.name || '',
-        foundUser.avatarUrl || foundUser.photoURL || ''
-      );
-
-      setSearchQuery("");
-      navigate(`/chat/${chatId}`);
-      toast.success(`Started chat with @${foundUser.username}`);
+      if (chatId) {
+        setSearchQuery("");
+        navigate(`/chat/${chatId}`);
+        toast.success(`Started chat with @${foundUser.username}`);
+      }
     } catch (error) {
       console.error("Error searching user:", error);
       toast.error("Failed to search user");
@@ -180,24 +164,12 @@ const Chats = () => {
     navigate(`/chat/${chatId}`);
   };
 
-  const handleProfileClick = () => {
-    navigate('/profile');
-  };
-
-  const handleMenuClick = () => {
-    navigate('/settings');
-  };
-
-  const handleNewChatClick = () => {
-    navigate('/new-message');
-  };
-
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
         <div className="flex items-center space-x-4">
-          <div onClick={handleProfileClick} className="cursor-pointer relative">
+          <div onClick={() => navigate('/profile')} className="cursor-pointer relative">
             <ChatAvatar 
               name="You" 
               size="md"
@@ -227,12 +199,11 @@ const Chats = () => {
               )}
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleMenuClick}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/settings')}>
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
         
-        {/* Search hint */}
         {searchQuery.startsWith('@') && searchQuery.length > 1 && (
           <p className="text-xs text-muted-foreground mt-2 px-1">
             Press Enter to search for @{searchQuery.slice(1)}
@@ -306,7 +277,7 @@ const Chats = () => {
       <div className="fixed bottom-6 right-6">
         <Button
           size="icon"
-          onClick={handleNewChatClick}
+          onClick={() => navigate('/new-message')}
           className="h-14 w-14 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
         >
           <Plus className="h-6 w-6" />
