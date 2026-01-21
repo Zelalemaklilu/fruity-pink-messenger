@@ -6,7 +6,6 @@ import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { useNavigate, useParams } from "react-router-dom";
 import { 
-  subscribeToMessages, 
   sendMessage, 
   getChatById,
   getProfile,
@@ -17,7 +16,6 @@ import {
   setTypingStatus,
   subscribeToTyping,
   deleteMessage,
-  Message as SupabaseMessage,
   Chat as SupabaseChat,
   Profile
 } from "@/lib/supabaseService";
@@ -84,6 +82,52 @@ const Chat = () => {
       : chatInfo.participant_1;
   }, [chatInfo, currentUserId]);
 
+  // Fetch messages from Supabase
+  const fetchMessages = useCallback(async () => {
+    if (!chatId || !currentUserId) return;
+    
+    console.log("FETCHING MESSAGES for chat:", chatId);
+    
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error("Error fetching messages:", error);
+      return;
+    }
+
+    console.log("MESSAGES FETCHED:", data?.length || 0);
+
+    const displayMessages: MessageDisplay[] = (data || []).map((msg) => ({
+      id: msg.id,
+      text: msg.content || "",
+      timestamp: formatTime(msg.created_at),
+      isOwn: msg.sender_id === currentUserId,
+      status: msg.status as "sending" | "sent" | "delivered" | "read",
+      type: msg.message_type as "text" | "image" | "file" | "voice",
+      mediaUrl: msg.media_url || undefined,
+      fileName: msg.file_name || undefined
+    }));
+
+    setMessages(displayMessages);
+    setLoading(false);
+    
+    console.log("MESSAGES RENDERED:", displayMessages.length);
+
+    // Scroll to bottom
+    if (displayMessages.length > 0) {
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({ 
+          index: displayMessages.length - 1, 
+          behavior: 'auto' 
+        });
+      }, 50);
+    }
+  }, [chatId, currentUserId]);
+
   // Load chat info
   useEffect(() => {
     if (!chatId || !currentUserId) return;
@@ -128,45 +172,40 @@ const Chat = () => {
     loadChatInfo();
   }, [chatId, currentUserId]);
 
-  // Subscribe to messages
+  // Subscribe to messages using Supabase Realtime
   useEffect(() => {
     if (!chatId || chatError || !chatInfo || !currentUserId) return;
     
-    console.log('[Chat] Subscribing to messages for chat:', chatId);
+    // Initial fetch
+    fetchMessages();
     
-    const channel = subscribeToMessages(chatId, (supabaseMessages) => {
-      console.log('[Chat] Received messages:', supabaseMessages.length);
-      
-      const displayMessages: MessageDisplay[] = supabaseMessages.map((msg: SupabaseMessage) => ({
-        id: msg.id,
-        text: msg.content || "",
-        timestamp: formatTime(msg.created_at),
-        isOwn: msg.sender_id === currentUserId,
-        status: msg.status,
-        type: msg.message_type,
-        mediaUrl: msg.media_url || undefined,
-        fileName: msg.file_name || undefined
-      }));
-      
-      setMessages(displayMessages);
-      setLoading(false);
-      
-      // Scroll to bottom after messages load
-      if (displayMessages.length > 0) {
-        setTimeout(() => {
-          virtuosoRef.current?.scrollToIndex({ 
-            index: displayMessages.length - 1, 
-            behavior: 'smooth' 
-          });
-        }, 100);
-      }
-    });
+    console.log("SUBSCRIBED TO CHAT:", chatId);
+    
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel(`chat:${chatId}`)
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'messages', 
+          filter: `chat_id=eq.${chatId}` 
+        },
+        (payload) => {
+          console.log("REALTIME MESSAGE EVENT:", payload.eventType);
+          fetchMessages();
+        }
+      )
+      .subscribe((status) => {
+        console.log("SUBSCRIPTION STATUS:", status);
+      });
 
     return () => {
-      console.log('[Chat] Unsubscribing from messages');
+      console.log("UNSUBSCRIBING FROM CHAT:", chatId);
       supabase.removeChannel(channel);
     };
-  }, [chatId, chatError, chatInfo, currentUserId]);
+  }, [chatId, chatError, chatInfo, currentUserId, fetchMessages]);
 
   // Subscribe to typing indicators
   useEffect(() => {
@@ -362,7 +401,7 @@ const Chat = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
 
@@ -407,18 +446,18 @@ const Chat = () => {
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* Messages - explicit height container */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {loading ? (
-          <div className="flex items-center justify-center flex-1">
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center flex-1">
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p className="text-muted-foreground">No messages yet. Say hello!</p>
           </div>
         ) : (
-          <div className="flex-1 min-h-0">
+          <div style={{ flex: 1, minHeight: 0, height: '100%' }}>
             <Virtuoso
               ref={virtuosoRef}
               style={{ height: '100%', width: '100%' }}
