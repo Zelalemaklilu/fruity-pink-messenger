@@ -1,25 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ArrowLeft, Phone, Video, MoreVertical, Paperclip, Send, Image, File, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { useNavigate, useParams } from "react-router-dom";
-import { 
-  sendMessage, 
-  getChatById,
-  getProfile,
-  resetUnreadCount,
-  markMessagesAsRead,
-  updateChat,
-  incrementUnreadCount,
-  setTypingStatus,
-  subscribeToTyping,
-  deleteMessage,
-  Chat as SupabaseChat,
-  Profile
-} from "@/lib/supabaseService";
-import { supabase } from "@/integrations/supabase/client";
+import { useMessages, useTypingIndicator, useProfile, useChatInfo } from "@/hooks/useChatStore";
+import { chatStore } from "@/lib/chatStore";
 import { uploadChatImage, uploadChatFile, compressImage, validateFile } from "@/lib/supabaseStorage";
 import { toast } from "sonner";
 import { Virtuoso } from "react-virtuoso";
@@ -30,6 +17,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+// =============================================
+// TYPES
+// =============================================
+
 interface MessageDisplay {
   id: string;
   text: string;
@@ -39,24 +30,27 @@ interface MessageDisplay {
   type?: "text" | "image" | "file" | "voice";
   mediaUrl?: string;
   fileName?: string;
+  isOptimistic?: boolean;
+  isFailed?: boolean;
 }
+
+// =============================================
+// UTILITIES
+// =============================================
 
 const formatTime = (timestamp?: string): string => {
   if (!timestamp) return "";
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+// =============================================
+// MAIN COMPONENT
+// =============================================
+
 const Chat = () => {
-  const [messages, setMessages] = useState<MessageDisplay[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [chatInfo, setChatInfo] = useState<SupabaseChat | null>(null);
-  const [otherProfile, setOtherProfile] = useState<Profile | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string>("");
-  const [chatError, setChatError] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { chatId } = useParams();
@@ -64,217 +58,77 @@ const Chat = () => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scrolledRef = useRef(false);
 
-  // Get current user ID
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    });
-  }, []);
+  // Get current user
+  const currentUserId = chatStore.getCurrentUserId();
 
-  // Get other participant info
-  const getOtherUserId = useCallback(() => {
-    if (!chatInfo || !currentUserId) return "";
-    return chatInfo.participant_1 === currentUserId 
-      ? chatInfo.participant_2 
-      : chatInfo.participant_1;
-  }, [chatInfo, currentUserId]);
+  // Use cached hooks
+  const { chat, otherUserId, loading: chatLoading } = useChatInfo(chatId);
+  const { profile: otherProfile, loading: profileLoading } = useProfile(otherUserId || undefined);
+  const { messages: rawMessages, loading: messagesLoading, sendMessage, deleteMessage } = useMessages(chatId);
+  const { typingUsers, setTyping } = useTypingIndicator(chatId);
 
-  // Fetch messages from Supabase
-  const fetchMessages = useCallback(async () => {
-    if (!chatId || !currentUserId) return;
-    
-    console.log("FETCHING MESSAGES for chat:", chatId);
-    
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error("Error fetching messages:", error);
-      return;
-    }
-
-    console.log("MESSAGES FETCHED:", data?.length || 0);
-
-    const displayMessages: MessageDisplay[] = (data || []).map((msg) => ({
+  // Transform messages for display (memoized)
+  const messages: MessageDisplay[] = useMemo(() => {
+    return rawMessages.map((msg) => ({
       id: msg.id,
       text: msg.content || "",
       timestamp: formatTime(msg.created_at),
       isOwn: msg.sender_id === currentUserId,
-      status: msg.status as "sending" | "sent" | "delivered" | "read",
-      type: msg.message_type as "text" | "image" | "file" | "voice",
+      status: msg.status,
+      type: msg.message_type,
       mediaUrl: msg.media_url || undefined,
-      fileName: msg.file_name || undefined
+      fileName: msg.file_name || undefined,
+      isOptimistic: msg._optimistic,
+      isFailed: msg._failed,
     }));
+  }, [rawMessages, currentUserId]);
 
-    setMessages(displayMessages);
-    setLoading(false);
-    
-    console.log("MESSAGES RENDERED:", displayMessages.length);
-
-    // Scroll to bottom
-    if (displayMessages.length > 0) {
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    if (messages.length > 0 && virtuosoRef.current) {
+      // Only auto-scroll if we haven't manually scrolled or it's a new message
       setTimeout(() => {
         virtuosoRef.current?.scrollToIndex({ 
-          index: displayMessages.length - 1, 
-          behavior: 'auto' 
+          index: messages.length - 1, 
+          behavior: scrolledRef.current ? 'smooth' : 'auto'
         });
+        scrolledRef.current = true;
       }, 50);
     }
-  }, [chatId, currentUserId]);
-
-  // Load chat info
-  useEffect(() => {
-    if (!chatId || !currentUserId) return;
-    
-    const loadChatInfo = async () => {
-      try {
-        const chat = await getChatById(chatId);
-        
-        if (!chat) {
-          setChatError("Chat not found");
-          setLoading(false);
-          return;
-        }
-        
-        // Verify user is a participant
-        if (chat.participant_1 !== currentUserId && chat.participant_2 !== currentUserId) {
-          setChatError("You don't have access to this chat");
-          setLoading(false);
-          return;
-        }
-        
-        setChatInfo(chat);
-        
-        // Load other user's profile
-        const otherUserId = chat.participant_1 === currentUserId 
-          ? chat.participant_2 
-          : chat.participant_1;
-        const profile = await getProfile(otherUserId);
-        setOtherProfile(profile);
-        
-        // Reset unread count
-        resetUnreadCount(chatId, currentUserId).catch(console.warn);
-        markMessagesAsRead(chatId, currentUserId).catch(console.warn);
-        
-      } catch (error) {
-        console.error("Error loading chat:", error);
-        setChatError("Failed to load chat");
-        setLoading(false);
-      }
-    };
-    
-    loadChatInfo();
-  }, [chatId, currentUserId]);
-
-  // Subscribe to messages using Supabase Realtime
-  useEffect(() => {
-    if (!chatId || chatError || !chatInfo || !currentUserId) return;
-    
-    // Initial fetch
-    fetchMessages();
-    
-    console.log("SUBSCRIBED TO CHAT:", chatId);
-    
-    // Subscribe to realtime changes
-    const channel = supabase
-      .channel(`chat:${chatId}`)
-      .on(
-        'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'messages', 
-          filter: `chat_id=eq.${chatId}` 
-        },
-        (payload) => {
-          console.log("REALTIME MESSAGE EVENT:", payload.eventType);
-          fetchMessages();
-        }
-      )
-      .subscribe((status) => {
-        console.log("SUBSCRIPTION STATUS:", status);
-      });
-
-    return () => {
-      console.log("UNSUBSCRIBING FROM CHAT:", chatId);
-      supabase.removeChannel(channel);
-    };
-  }, [chatId, chatError, chatInfo, currentUserId, fetchMessages]);
-
-  // Subscribe to typing indicators
-  useEffect(() => {
-    if (!chatId || !currentUserId) return;
-    
-    const channel = subscribeToTyping(chatId, currentUserId, (typing) => {
-      setIsTyping(typing);
-    });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [chatId, currentUserId]);
+  }, [messages.length]);
 
   // Handle typing indicator
-  const handleTyping = () => {
-    if (!chatId || !currentUserId) return;
-    
-    setTypingStatus(chatId, currentUserId, true).catch(console.warn);
+  const handleTyping = useCallback(() => {
+    setTyping(true);
     
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
     
     typingTimeoutRef.current = setTimeout(() => {
-      setTypingStatus(chatId, currentUserId, false).catch(console.warn);
+      setTyping(false);
     }, 2000);
-  };
+  }, [setTyping]);
 
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() || !chatId || !currentUserId || !chatInfo) return;
+  // Send text message
+  const handleSendMessage = useCallback(async () => {
+    if (!newMessage.trim()) return;
 
     const messageText = newMessage.trim();
-    const tempId = `temp_${Date.now()}`;
-    const receiverId = getOtherUserId();
-    
-    // Optimistic update
-    const tempMessage: MessageDisplay = {
-      id: tempId,
-      text: messageText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isOwn: true,
-      status: "sending"
-    };
-    setMessages(prev => [...prev, tempMessage]);
     setNewMessage("");
+    setTyping(false);
     
-    // Clear typing indicator
-    setTypingStatus(chatId, currentUserId, false).catch(console.warn);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
-    try {
-      await sendMessage(chatId, currentUserId, receiverId, messageText);
-      
-      // Update chat metadata
-      updateChat(chatId, {
-        last_message: messageText,
-        last_message_time: new Date().toISOString(),
-        last_sender_id: currentUserId
-      }).catch(console.warn);
-
-      // Increment unread for receiver
-      incrementUnreadCount(chatId, receiverId).catch(console.warn);
-      
-    } catch (error) {
-      console.error("Error sending message:", error);
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+    const success = await sendMessage(messageText);
+    if (!success) {
       toast.error("Failed to send message");
     }
-  };
+  }, [newMessage, sendMessage, setTyping]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -283,9 +137,10 @@ const Chat = () => {
     }
   };
 
+  // Handle image upload
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !chatId || !currentUserId) return;
+    if (!file || !chatId) return;
 
     const validation = validateFile(file, { 
       maxSize: 5 * 1024 * 1024, 
@@ -306,17 +161,12 @@ const Chat = () => {
         setUploadProgress(progress.percentage);
       });
 
-      const receiverId = getOtherUserId();
-      await sendMessage(chatId, currentUserId, receiverId, "", "image", result.url);
-
-      updateChat(chatId, {
-        last_message: "📷 Photo",
-        last_message_time: new Date().toISOString(),
-        last_sender_id: currentUserId
-      }).catch(console.warn);
-
-      incrementUnreadCount(chatId, receiverId).catch(console.warn);
-      toast.success("Image sent!");
+      const success = await sendMessage("", "image", result.url);
+      if (success) {
+        toast.success("Image sent!");
+      } else {
+        toast.error("Failed to send image");
+      }
     } catch (error) {
       console.error("Error uploading image:", error);
       toast.error("Failed to upload image");
@@ -327,9 +177,10 @@ const Chat = () => {
     }
   };
 
+  // Handle file upload
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !chatId || !currentUserId) return;
+    if (!file || !chatId) return;
 
     const validation = validateFile(file, { maxSize: 10 * 1024 * 1024 });
     if (!validation.valid) {
@@ -345,17 +196,12 @@ const Chat = () => {
         setUploadProgress(progress.percentage);
       });
 
-      const receiverId = getOtherUserId();
-      await sendMessage(chatId, currentUserId, receiverId, "", "file", result.url, file.name);
-
-      updateChat(chatId, {
-        last_message: `📎 ${file.name}`,
-        last_message_time: new Date().toISOString(),
-        last_sender_id: currentUserId
-      }).catch(console.warn);
-
-      incrementUnreadCount(chatId, receiverId).catch(console.warn);
-      toast.success("File sent!");
+      const success = await sendMessage("", "file", result.url, file.name);
+      if (success) {
+        toast.success("File sent!");
+      } else {
+        toast.error("Failed to send file");
+      }
     } catch (error) {
       console.error("Error uploading file:", error);
       toast.error("Failed to upload file");
@@ -366,6 +212,7 @@ const Chat = () => {
     }
   };
 
+  // Handle message deletion
   const handleDeleteMessage = async (messageId: string) => {
     const success = await deleteMessage(messageId);
     if (success) {
@@ -375,11 +222,15 @@ const Chat = () => {
     }
   };
 
+  // Derived state
   const chatName = otherProfile?.name || otherProfile?.username || "Chat";
   const chatAvatar = otherProfile?.avatar_url || "";
+  const isOnline = otherProfile?.is_online || false;
+  const isTyping = typingUsers.length > 0;
+  const isLoading = chatLoading || messagesLoading;
 
-  // Error state
-  if (chatError) {
+  // Error state - chat not found or no access
+  if (!chatLoading && !chat && chatId) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border p-4 z-10">
@@ -392,7 +243,7 @@ const Chat = () => {
         </div>
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-4">
-            <p className="text-muted-foreground">{chatError}</p>
+            <p className="text-muted-foreground">Chat not found or you don't have access</p>
             <Button onClick={() => navigate("/chats")}>Back to Chats</Button>
           </div>
         </div>
@@ -406,16 +257,21 @@ const Chat = () => {
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
 
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
+      <div className="flex-shrink-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
         <div className="flex items-center space-x-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/chats")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <ChatAvatar name={chatName} src={chatAvatar} status={otherProfile?.is_online ? "online" : "offline"} size="md" />
+          <ChatAvatar 
+            name={chatName} 
+            src={chatAvatar} 
+            status={isOnline ? "online" : "offline"} 
+            size="md" 
+          />
           <div className="flex-1">
             <h2 className="font-semibold text-foreground">{chatName}</h2>
             <p className="text-xs text-muted-foreground">
-              {isTyping ? "typing..." : otherProfile?.is_online ? "online" : "offline"}
+              {isTyping ? "typing..." : isOnline ? "online" : "offline"}
             </p>
           </div>
           <Button variant="ghost" size="icon">
@@ -432,7 +288,7 @@ const Chat = () => {
 
       {/* Upload Progress */}
       {uploading && (
-        <div className="px-4 py-2 bg-muted/50">
+        <div className="flex-shrink-0 px-4 py-2 bg-muted/50">
           <div className="flex items-center space-x-2">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm">Uploading... {uploadProgress}%</span>
@@ -446,47 +302,46 @@ const Chat = () => {
         </div>
       )}
 
-      {/* Messages - explicit height container */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {loading ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Messages */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {isLoading ? (
+          <div className="h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : messages.length === 0 ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="h-full flex items-center justify-center">
             <p className="text-muted-foreground">No messages yet. Say hello!</p>
           </div>
         ) : (
-          <div style={{ flex: 1, minHeight: 0, height: '100%' }}>
-            <Virtuoso
-              ref={virtuosoRef}
-              style={{ height: '100%', width: '100%' }}
-              data={messages}
-              overscan={200}
-              itemContent={(index, message) => (
-                <div className="px-4 py-1">
-                  <MessageBubble
-                    message={message.text}
-                    timestamp={message.timestamp}
-                    isOwn={message.isOwn}
-                    status={message.status === 'sending' ? 'sent' : message.status}
-                    type={message.type}
-                    mediaUrl={message.mediaUrl}
-                    fileName={message.fileName}
-                    onDelete={message.isOwn ? () => handleDeleteMessage(message.id) : undefined}
-                  />
-                </div>
-              )}
-              followOutput="smooth"
-              initialTopMostItemIndex={messages.length - 1}
-              alignToBottom
-            />
-          </div>
+          <Virtuoso
+            ref={virtuosoRef}
+            className="h-full w-full"
+            data={messages}
+            overscan={200}
+            itemContent={(index, message) => (
+              <div className="px-4 py-1">
+                <MessageBubble
+                  message={message.text}
+                  timestamp={message.timestamp}
+                  isOwn={message.isOwn}
+                  status={message.status === 'sending' ? 'sent' : message.status}
+                  type={message.type}
+                  mediaUrl={message.mediaUrl}
+                  fileName={message.fileName}
+                  onDelete={message.isOwn && !message.isOptimistic ? () => handleDeleteMessage(message.id) : undefined}
+                  className={message.isFailed ? "opacity-50" : ""}
+                />
+              </div>
+            )}
+            followOutput="smooth"
+            initialTopMostItemIndex={messages.length - 1}
+            alignToBottom
+          />
         )}
       </div>
 
       {/* Input */}
-      <div className="sticky bottom-0 bg-background border-t border-border p-4">
+      <div className="flex-shrink-0 bg-background border-t border-border p-4">
         <div className="flex items-center space-x-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -505,7 +360,7 @@ const Chat = () => {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          
+
           <Input
             placeholder="Type a message..."
             value={newMessage}
@@ -514,15 +369,15 @@ const Chat = () => {
               handleTyping();
             }}
             onKeyPress={handleKeyPress}
-            className="flex-1 rounded-full"
+            className="flex-1 bg-muted border-0 rounded-full"
             disabled={uploading}
           />
-          
+
           <Button 
             size="icon" 
             onClick={handleSendMessage}
             disabled={!newMessage.trim() || uploading}
-            className="rounded-full bg-gradient-primary"
+            className="rounded-full bg-gradient-primary hover:opacity-90 transition-smooth"
           >
             <Send className="h-5 w-5" />
           </Button>
