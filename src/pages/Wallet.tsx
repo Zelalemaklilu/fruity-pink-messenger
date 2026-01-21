@@ -1,44 +1,72 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Wallet as WalletIcon, Plus, ArrowUpRight, ArrowDownLeft, Eye, EyeOff } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { ArrowLeft, Wallet as WalletIcon, Plus, ArrowUpRight, ArrowDownLeft, Eye, EyeOff, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { transactionStore, type Transaction } from "@/lib/transactionStore";
+import { walletService, type WalletData, type WalletTransaction } from "@/lib/walletService";
+import WalletTerms from "@/components/WalletTerms";
+import { toast } from "sonner";
 
 const Wallet = () => {
   const [showBalance, setShowBalance] = useState(true);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [wallet, setWallet] = useState<WalletData | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [stats, setStats] = useState({ monthly_received: 0, monthly_sent: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  const [needsActivation, setNeedsActivation] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Load recent transactions
-    const recentTransactions = transactionStore.getRecentTransactions(5);
-    setTransactions(recentTransactions);
+  const loadWalletData = useCallback(async (forceRefresh = false) => {
+    try {
+      const data = await walletService.getWalletBalance(forceRefresh);
+      setWallet(data.wallet);
+      setTransactions(data.transactions.slice(0, 5)); // Recent 5
+      setStats(data.stats);
+      setNeedsActivation(data.needs_activation || !data.wallet);
+    } catch (error) {
+      console.error("Failed to load wallet:", error);
+      toast.error("Failed to load wallet data");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Refresh transactions when component comes back into focus
+  useEffect(() => {
+    loadWalletData();
+  }, [loadWalletData]);
+
+  // Refresh on focus
   useEffect(() => {
     const handleFocus = () => {
-      const recentTransactions = transactionStore.getRecentTransactions(5);
-      setTransactions(recentTransactions);
+      loadWalletData(true);
     };
-
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, []);
-
-  const balance = 2750.50;
+  }, [loadWalletData]);
 
   const handleAddMoney = () => {
+    if (needsActivation) {
+      setShowTerms(true);
+      return;
+    }
     navigate('/add-money');
   };
 
   const handleSendMoney = () => {
+    if (needsActivation) {
+      setShowTerms(true);
+      return;
+    }
     navigate('/send-money');
   };
 
   const handleRequestMoney = () => {
+    if (needsActivation) {
+      setShowTerms(true);
+      return;
+    }
     navigate('/request-money');
   };
 
@@ -46,16 +74,20 @@ const Wallet = () => {
     navigate('/transaction-history');
   };
 
+  const handleTermsAccepted = () => {
+    setShowTerms(false);
+    setNeedsActivation(false);
+    loadWalletData(true);
+  };
+
   const getTransactionIcon = (type: string) => {
     switch (type) {
-      case "received":
+      case "transfer_in":
+      case "deposit":
         return <ArrowDownLeft className="h-5 w-5 text-status-online" />;
-      case "sent":
+      case "transfer_out":
+      case "withdrawal":
         return <ArrowUpRight className="h-5 w-5 text-status-offline" />;
-      case "add_money":
-        return <Plus className="h-5 w-5 text-primary" />;
-      case "request":
-        return <WalletIcon className="h-5 w-5 text-status-away" />;
       default:
         return <WalletIcon className="h-5 w-5" />;
     }
@@ -68,11 +100,54 @@ const Wallet = () => {
       case "pending":
         return "bg-status-away text-white";
       case "failed":
+      case "reversed":
         return "bg-status-offline text-white";
       default:
         return "bg-muted text-muted-foreground";
     }
   };
+
+  const formatTransactionType = (type: string) => {
+    switch (type) {
+      case "transfer_in": return "Received";
+      case "transfer_out": return "Sent";
+      case "deposit": return "Added Money";
+      case "withdrawal": return "Withdrawal";
+      default: return type;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  // Show terms acceptance screen
+  if (showTerms) {
+    return (
+      <WalletTerms 
+        onAccepted={handleTermsAccepted}
+        onCancel={() => setShowTerms(false)}
+      />
+    );
+  }
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="mt-2 text-muted-foreground">Loading wallet...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -87,13 +162,44 @@ const Wallet = () => {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h1 className="text-lg font-semibold">Wallet</h1>
+            <div>
+              <h1 className="text-lg font-semibold">Wallet</h1>
+              {wallet?.status === 'active' && (
+                <div className="flex items-center space-x-1">
+                  <Shield className="h-3 w-3 text-status-online" />
+                  <span className="text-xs text-status-online">Verified</span>
+                </div>
+              )}
+            </div>
           </div>
           <Button variant="ghost" size="icon">
             <WalletIcon className="h-5 w-5" />
           </Button>
         </div>
       </div>
+
+      {/* Activation Banner */}
+      {needsActivation && (
+        <div className="p-4">
+          <Card 
+            className="p-4 bg-primary/10 border-primary/20 cursor-pointer hover:bg-primary/15 transition-colors"
+            onClick={() => setShowTerms(true)}
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Shield className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium text-foreground">Activate Your Wallet</h3>
+                <p className="text-sm text-muted-foreground">
+                  Accept terms to start using real money features
+                </p>
+              </div>
+              <ArrowUpRight className="h-5 w-5 text-primary" />
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Balance Card */}
       <div className="p-4">
@@ -104,10 +210,14 @@ const Wallet = () => {
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <p className="text-primary-foreground/80 text-sm">Total Balance</p>
+                <p className="text-primary-foreground/80 text-sm">
+                  {needsActivation ? "Available After Activation" : "Total Balance"}
+                </p>
                 <div className="flex items-center space-x-2 mt-1">
                   {showBalance ? (
-                    <h2 className="text-3xl font-bold">{balance.toFixed(2)} ETB</h2>
+                    <h2 className="text-3xl font-bold">
+                      {needsActivation ? "0.00" : (wallet?.balance ?? 0).toFixed(2)} ETB
+                    </h2>
                   ) : (
                     <h2 className="text-3xl font-bold">••••••</h2>
                   )}
@@ -120,6 +230,11 @@ const Wallet = () => {
                     {showBalance ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                   </Button>
                 </div>
+                {wallet?.currency && (
+                  <p className="text-xs text-primary-foreground/60 mt-1">
+                    Currency: {wallet.currency}
+                  </p>
+                )}
               </div>
             </div>
             
@@ -158,13 +273,13 @@ const Wallet = () => {
         <div className="grid grid-cols-2 gap-4">
           <Card className="p-4 text-center">
             <div className="text-2xl font-bold text-status-online mb-1">
-              +{transactions.filter(t => t.type === 'received').reduce((sum, t) => sum + t.amount, 0).toFixed(2)}
+              +{stats.monthly_received.toFixed(2)}
             </div>
             <div className="text-sm text-muted-foreground">This Month Received</div>
           </Card>
           <Card className="p-4 text-center">
             <div className="text-2xl font-bold text-status-offline mb-1">
-              -{transactions.filter(t => t.type === 'sent').reduce((sum, t) => sum + t.amount, 0).toFixed(2)}
+              -{stats.monthly_sent.toFixed(2)}
             </div>
             <div className="text-sm text-muted-foreground">This Month Sent</div>
           </Card>
@@ -172,7 +287,7 @@ const Wallet = () => {
       </div>
 
       {/* Recent Transactions */}
-      <div className="px-4">
+      <div className="px-4 pb-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-foreground">Recent Transactions</h3>
           <Button 
@@ -194,28 +309,28 @@ const Wallet = () => {
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                  {getTransactionIcon(transaction.type)}
+                  {getTransactionIcon(transaction.transaction_type)}
                 </div>
                 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium text-foreground truncate">
-                      {transaction.description}
+                      {transaction.description || formatTransactionType(transaction.transaction_type)}
                     </h4>
                     <div className="flex items-center space-x-2">
                       <span className={`font-medium ${
-                        transaction.type === 'received' || transaction.type === 'add_money' 
+                        transaction.transaction_type === 'transfer_in' || transaction.transaction_type === 'deposit'
                           ? 'text-status-online' 
                           : 'text-status-offline'
                       }`}>
-                        {transaction.type === 'received' || transaction.type === 'add_money' ? '+' : '-'}
+                        {transaction.transaction_type === 'transfer_in' || transaction.transaction_type === 'deposit' ? '+' : '-'}
                         {transaction.amount.toFixed(2)} ETB
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <p className="text-sm text-muted-foreground">
-                      {transaction.timestamp}
+                      {formatDate(transaction.created_at)}
                     </p>
                     <Badge className={`${getStatusColor(transaction.status)} px-2 py-1 text-xs`}>
                       {transaction.status}
@@ -231,7 +346,9 @@ const Wallet = () => {
               <WalletIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="font-medium text-foreground mb-2">No transactions yet</h3>
               <p className="text-sm text-muted-foreground">
-                Start by adding money to your wallet or sending money to someone.
+                {needsActivation 
+                  ? "Activate your wallet to start making transactions."
+                  : "Start by adding money to your wallet or sending money to someone."}
               </p>
             </Card>
           )}

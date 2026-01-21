@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { ArrowLeft, CreditCard, Building, Phone, QrCode } from "lucide-react";
+import { ArrowLeft, CreditCard, Building, Phone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
-import { transactionStore } from "@/lib/transactionStore";
+import { walletService } from "@/lib/walletService";
+import { toast } from "sonner";
 
 const AddMoney = () => {
   const [amount, setAmount] = useState("");
   const [selectedMethod, setSelectedMethod] = useState("card");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const methods = [
@@ -20,30 +22,36 @@ const AddMoney = () => {
 
   const quickAmounts = [100, 250, 500, 1000, 2000, 5000];
 
-  const handleAddMoney = () => {
+  const handleAddMoney = async () => {
     if (!amount || parseFloat(amount) <= 0) return;
 
-    // Create and add the transaction
-    const transaction = transactionStore.addTransaction({
-      type: "add_money",
-      amount: parseFloat(amount),
-      description: `Added money via ${methods.find(m => m.id === selectedMethod)?.name || "Unknown"}`,
-      status: "completed"
-    });
+    setIsLoading(true);
+    try {
+      const method = methods.find(m => m.id === selectedMethod)?.name || "Unknown";
+      const result = await walletService.deposit(parseFloat(amount), method);
 
-    // Navigate to receipt with transaction data
-    navigate('/transaction-receipt', { 
-      state: { 
-        transaction: {
-          type: 'add_money',
-          amount: parseFloat(amount),
-          method: methods.find(m => m.id === selectedMethod)?.name || "Unknown",
-          transactionId: transaction.transactionId,
-          timestamp: transaction.timestamp,
-          status: 'completed'
-        }
-      } 
-    });
+      if (result.success && result.transaction) {
+        navigate('/transaction-receipt', { 
+          state: { 
+            transaction: {
+              type: 'add_money',
+              amount: result.transaction.amount,
+              method: result.transaction.method,
+              transactionId: result.transaction.id,
+              timestamp: result.transaction.created_at,
+              status: result.transaction.status
+            }
+          } 
+        });
+      } else {
+        toast.error(result.error || "Failed to add money");
+      }
+    } catch (error) {
+      console.error("Add money error:", error);
+      toast.error("Failed to add money. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -125,10 +133,14 @@ const AddMoney = () => {
       <div className="p-4">
         <Button 
           onClick={handleAddMoney}
-          disabled={!amount || parseFloat(amount) <= 0}
+          disabled={!amount || parseFloat(amount) <= 0 || isLoading}
           className="w-full h-12 bg-gradient-primary hover:opacity-90"
         >
-          Add {amount ? `${amount} ETB` : 'Money'} to Wallet
+          {isLoading ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing...</>
+          ) : (
+            `Add ${amount ? `${amount} ETB` : 'Money'} to Wallet`
+          )}
         </Button>
       </div>
     </div>
