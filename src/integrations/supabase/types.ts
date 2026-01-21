@@ -223,6 +223,132 @@ export type Database = {
           },
         ]
       }
+      wallet_terms_acceptance: {
+        Row: {
+          accepted_at: string
+          device_hash: string | null
+          id: string
+          ip_address: string | null
+          terms_version: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          device_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          terms_version: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          device_hash?: string | null
+          id?: string
+          ip_address?: string | null
+          terms_version?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      wallet_transactions: {
+        Row: {
+          amount: number
+          balance_after: number
+          balance_before: number
+          counterparty_wallet_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          idempotency_key: string | null
+          metadata: Json | null
+          reference_id: string | null
+          status: Database["public"]["Enums"]["wallet_transaction_status"]
+          transaction_type: Database["public"]["Enums"]["wallet_transaction_type"]
+          wallet_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after: number
+          balance_before: number
+          counterparty_wallet_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
+          status?: Database["public"]["Enums"]["wallet_transaction_status"]
+          transaction_type: Database["public"]["Enums"]["wallet_transaction_type"]
+          wallet_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after?: number
+          balance_before?: number
+          counterparty_wallet_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
+          status?: Database["public"]["Enums"]["wallet_transaction_status"]
+          transaction_type?: Database["public"]["Enums"]["wallet_transaction_type"]
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_transactions_counterparty_wallet_id_fkey"
+            columns: ["counterparty_wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_transactions_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallets: {
+        Row: {
+          created_at: string
+          currency: string
+          id: string
+          status: Database["public"]["Enums"]["wallet_status"]
+          terms_accepted_at: string | null
+          terms_version: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          id?: string
+          status?: Database["public"]["Enums"]["wallet_status"]
+          terms_accepted_at?: string | null
+          terms_version?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          id?: string
+          status?: Database["public"]["Enums"]["wallet_status"]
+          terms_accepted_at?: string | null
+          terms_version?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -246,6 +372,23 @@ export type Database = {
           username: string
         }[]
       }
+      get_user_wallet: {
+        Args: { p_user_id: string }
+        Returns: {
+          balance: number
+          created_at: string
+          currency: string
+          id: string
+          status: Database["public"]["Enums"]["wallet_status"]
+          terms_accepted_at: string
+          user_id: string
+        }[]
+      }
+      get_wallet_balance: { Args: { p_wallet_id: string }; Returns: number }
+      has_accepted_wallet_terms: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       search_users_public: {
         Args: { search_term: string }
         Returns: {
@@ -261,7 +404,14 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      wallet_status: "active" | "suspended" | "pending_activation"
+      wallet_transaction_status: "pending" | "completed" | "failed" | "reversed"
+      wallet_transaction_type:
+        | "deposit"
+        | "withdrawal"
+        | "transfer_in"
+        | "transfer_out"
+        | "adjustment"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -388,6 +538,16 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      wallet_status: ["active", "suspended", "pending_activation"],
+      wallet_transaction_status: ["pending", "completed", "failed", "reversed"],
+      wallet_transaction_type: [
+        "deposit",
+        "withdrawal",
+        "transfer_in",
+        "transfer_out",
+        "adjustment",
+      ],
+    },
   },
 } as const
