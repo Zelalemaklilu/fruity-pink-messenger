@@ -1,84 +1,19 @@
-import { useState } from "react";
-import { ArrowLeft, Calendar, Filter, ArrowUpRight, ArrowDownLeft, Plus, CalendarIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Calendar, Filter, ArrowUpRight, ArrowDownLeft, Plus, CalendarIcon, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { useNavigate } from "react-router-dom";
-
-interface Transaction {
-  id: string;
-  type: "sent" | "received" | "topup";
-  amount: number;
-  description: string;
-  timestamp: string;
-  status: "completed" | "pending" | "failed";
-  date: string;
-}
-
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    type: "received",
-    amount: 250.00,
-    description: "From Alex Johnson",
-    timestamp: "Today, 2:30 PM",
-    status: "completed",
-    date: "2024-01-15"
-  },
-  {
-    id: "2",
-    type: "sent",
-    amount: 150.00,
-    description: "To Sarah Williams",
-    timestamp: "Today, 1:15 PM", 
-    status: "completed",
-    date: "2024-01-15"
-  },
-  {
-    id: "3",
-    type: "topup",
-    amount: 500.00,
-    description: "Bank Transfer",
-    timestamp: "Yesterday, 6:20 PM",
-    status: "completed",
-    date: "2024-01-14"
-  },
-  {
-    id: "4",
-    type: "sent",
-    amount: 75.50,
-    description: "To John Smith",
-    timestamp: "Yesterday, 3:10 PM",
-    status: "pending",
-    date: "2024-01-14"
-  },
-  {
-    id: "5",
-    type: "received",
-    amount: 300.00,
-    description: "From Emma Davis",
-    timestamp: "2 days ago, 5:45 PM",
-    status: "completed",
-    date: "2024-01-13"
-  },
-  {
-    id: "6",
-    type: "sent",
-    amount: 200.00,
-    description: "To Michael Brown",
-    timestamp: "3 days ago, 11:20 AM",
-    status: "failed",
-    date: "2024-01-12"
-  }
-];
+import { walletService, type WalletTransaction } from "@/lib/walletService";
+import { toast } from "sonner";
 
 const TransactionHistory = () => {
   const [activeFilter, setActiveFilter] = useState("all");
@@ -86,18 +21,43 @@ const TransactionHistory = () => {
   const [dateTo, setDateTo] = useState<Date>();
   const [statusFilter, setStatusFilter] = useState("all");
   const [amountFilter, setAmountFilter] = useState("all");
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
+
+  const loadTransactions = async (forceRefresh = false) => {
+    try {
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      }
+      const data = await walletService.getWalletBalance(forceRefresh);
+      setTransactions(data.transactions || []);
+    } catch (error) {
+      console.error("Failed to load transactions:", error);
+      toast.error("Failed to load transactions");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTransactions();
+  }, []);
 
   const getTransactionIcon = (type: string) => {
     switch(type) {
-      case "sent":
+      case "transfer_out":
         return <ArrowUpRight className="h-4 w-4 text-destructive" />;
-      case "received":
+      case "transfer_in":
         return <ArrowDownLeft className="h-4 w-4 text-green-500" />;
-      case "topup":
+      case "deposit":
         return <Plus className="h-4 w-4 text-primary" />;
+      case "withdrawal":
+        return <ArrowUpRight className="h-4 w-4 text-orange-500" />;
       default:
-        return null;
+        return <ArrowUpRight className="h-4 w-4" />;
     }
   };
 
@@ -109,51 +69,102 @@ const TransactionHistory = () => {
         return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
       case "failed":
         return "bg-destructive/10 text-destructive";
+      case "reversed":
+        return "bg-orange-500/10 text-orange-700 dark:text-orange-400";
       default:
         return "bg-muted text-muted-foreground";
     }
   };
 
-  const filterTransactions = (type: string) => {
-    let filtered = mockTransactions;
+  const mapTypeToFilter = (type: string): string => {
+    switch(type) {
+      case "transfer_out":
+        return "sent";
+      case "transfer_in":
+        return "received";
+      case "deposit":
+        return "topup";
+      default:
+        return "other";
+    }
+  };
+
+  const getTransactionDescription = (tx: WalletTransaction): string => {
+    if (tx.description) return tx.description;
+    
+    switch(tx.transaction_type) {
+      case "transfer_out":
+        return "Money Sent";
+      case "transfer_in":
+        return "Money Received";
+      case "deposit":
+        return "Deposit";
+      case "withdrawal":
+        return "Withdrawal";
+      default:
+        return "Transaction";
+    }
+  };
+
+  const formatTimestamp = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    // If less than 24 hours, show relative time
+    if (diff < 24 * 60 * 60 * 1000) {
+      return formatDistanceToNow(date, { addSuffix: true });
+    }
+    
+    // Otherwise show formatted date
+    return format(date, "MMM d, h:mm a");
+  };
+
+  const filterTransactions = () => {
+    let filtered = [...transactions];
     
     // Filter by type
-    if (type !== "all") {
-      filtered = filtered.filter(transaction => transaction.type === type);
+    if (activeFilter !== "all") {
+      filtered = filtered.filter(tx => {
+        const mappedType = mapTypeToFilter(tx.transaction_type);
+        return mappedType === activeFilter;
+      });
     }
     
     // Filter by status
     if (statusFilter !== "all") {
-      filtered = filtered.filter(transaction => transaction.status === statusFilter);
+      filtered = filtered.filter(tx => tx.status === statusFilter);
     }
     
     // Filter by amount range
     if (amountFilter !== "all") {
       switch(amountFilter) {
         case "low":
-          filtered = filtered.filter(transaction => transaction.amount < 100);
+          filtered = filtered.filter(tx => tx.amount < 100);
           break;
         case "medium":
-          filtered = filtered.filter(transaction => transaction.amount >= 100 && transaction.amount < 500);
+          filtered = filtered.filter(tx => tx.amount >= 100 && tx.amount < 500);
           break;
         case "high":
-          filtered = filtered.filter(transaction => transaction.amount >= 500);
+          filtered = filtered.filter(tx => tx.amount >= 500);
           break;
       }
     }
     
     // Filter by date range
     if (dateFrom || dateTo) {
-      filtered = filtered.filter(transaction => {
-        const transactionDate = new Date(transaction.date);
+      filtered = filtered.filter(tx => {
+        const txDate = new Date(tx.created_at);
         let matchesDateRange = true;
         
         if (dateFrom) {
-          matchesDateRange = matchesDateRange && transactionDate >= dateFrom;
+          matchesDateRange = matchesDateRange && txDate >= dateFrom;
         }
         
         if (dateTo) {
-          matchesDateRange = matchesDateRange && transactionDate <= dateTo;
+          const endOfDay = new Date(dateTo);
+          endOfDay.setHours(23, 59, 59, 999);
+          matchesDateRange = matchesDateRange && txDate <= endOfDay;
         }
         
         return matchesDateRange;
@@ -161,10 +172,6 @@ const TransactionHistory = () => {
     }
     
     return filtered;
-  };
-
-  const getFilteredTransactions = () => {
-    return filterTransactions(activeFilter);
   };
 
   const clearFilters = () => {
@@ -175,10 +182,12 @@ const TransactionHistory = () => {
     setActiveFilter("all");
   };
 
+  const filteredTransactions = filterTransactions();
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
+      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button 
@@ -191,6 +200,16 @@ const TransactionHistory = () => {
             <h1 className="text-lg font-semibold">Transaction History</h1>
           </div>
           <div className="flex space-x-2">
+            {/* Refresh Button */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => loadTransactions(true)}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+
             {/* Date Range Picker */}
             <Popover>
               <PopoverTrigger asChild>
@@ -298,6 +317,7 @@ const TransactionHistory = () => {
                         <SelectItem value="completed">Completed</SelectItem>
                         <SelectItem value="pending">Pending</SelectItem>
                         <SelectItem value="failed">Failed</SelectItem>
+                        <SelectItem value="reversed">Reversed</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -336,57 +356,61 @@ const TransactionHistory = () => {
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="sent">Sent</TabsTrigger>
             <TabsTrigger value="received">Received</TabsTrigger>
-            <TabsTrigger value="topup">Top Up</TabsTrigger>
+            <TabsTrigger value="topup">Deposit</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {/* Transactions List */}
       <div className="p-4 space-y-3">
-        {getFilteredTransactions().map((transaction) => (
-          <Card 
-            key={transaction.id} 
-            className="p-4 hover:bg-muted/50 transition-smooth cursor-pointer"
-            onClick={() => navigate(`/transaction-detail/${transaction.id}`)}
-          >
-            <div className="flex items-center space-x-3">
-              <div className="p-2 rounded-lg bg-muted">
-                {getTransactionIcon(transaction.type)}
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-foreground truncate">
-                    {transaction.description}
-                  </h4>
-                  <div className="text-right">
-                    <p className={`font-medium ${
-                      transaction.type === "received" || transaction.type === "topup" 
-                        ? "text-green-600 dark:text-green-400" 
-                        : "text-foreground"
-                    }`}>
-                      {transaction.type === "received" || transaction.type === "topup" ? "+" : "-"}
-                      {transaction.amount.toFixed(2)} ETB
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-sm text-muted-foreground">
-                    {transaction.timestamp}
-                  </p>
-                  <Badge className={getStatusColor(transaction.status)}>
-                    {transaction.status}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
-
-        {getFilteredTransactions().length === 0 && (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : filteredTransactions.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-muted-foreground">No transactions found</p>
           </div>
+        ) : (
+          filteredTransactions.map((tx) => (
+            <Card 
+              key={tx.id} 
+              className="p-4 hover:bg-muted/50 transition-smooth cursor-pointer"
+              onClick={() => navigate(`/transaction-detail/${tx.id}`)}
+            >
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-lg bg-muted">
+                  {getTransactionIcon(tx.transaction_type)}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-foreground truncate">
+                      {getTransactionDescription(tx)}
+                    </h4>
+                    <div className="text-right">
+                      <p className={`font-medium ${
+                        tx.transaction_type === "transfer_in" || tx.transaction_type === "deposit" 
+                          ? "text-green-600 dark:text-green-400" 
+                          : "text-foreground"
+                      }`}>
+                        {tx.transaction_type === "transfer_in" || tx.transaction_type === "deposit" ? "+" : "-"}
+                        {tx.amount.toFixed(2)} ETB
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-sm text-muted-foreground">
+                      {formatTimestamp(tx.created_at)}
+                    </p>
+                    <Badge className={getStatusColor(tx.status)}>
+                      {tx.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))
         )}
       </div>
     </div>
