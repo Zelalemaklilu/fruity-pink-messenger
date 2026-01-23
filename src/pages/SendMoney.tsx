@@ -1,84 +1,144 @@
-import { useState } from "react";
-import { ArrowLeft, Search, Send } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Search, Send, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { transactionStore } from "@/lib/transactionStore";
+import { walletService } from "@/lib/walletService";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Contact {
   id: string;
   name: string;
-  phone: string;
-  status: "online" | "away" | "offline";
-  avatar?: string;
+  username: string;
+  avatar_url?: string;
+  is_online?: boolean;
 }
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "Alex Johnson",
-    phone: "+251 911 123 456",
-    status: "online"
-  },
-  {
-    id: "2",
-    name: "Sarah Williams", 
-    phone: "+251 912 234 567",
-    status: "away"
-  },
-  {
-    id: "3",
-    name: "John Smith",
-    phone: "+251 913 345 678",
-    status: "offline"
-  }
-];
 
 const SendMoney = () => {
   const [amount, setAmount] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [note, setNote] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const navigate = useNavigate();
 
-  const filteredContacts = mockContacts.filter(contact =>
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.phone.includes(searchQuery)
-  );
+  // Load wallet balance on mount
+  useEffect(() => {
+    const loadBalance = async () => {
+      try {
+        const data = await walletService.getWalletBalance();
+        if (data.wallet) {
+          setWalletBalance(data.wallet.balance);
+        }
+      } catch (error) {
+        console.error("Failed to load balance:", error);
+      } finally {
+        setIsLoadingBalance(false);
+      }
+    };
+    loadBalance();
+  }, []);
+
+  // Search users when query changes
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (searchQuery.length < 2) {
+        setContacts([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const { data, error } = await supabase.rpc('search_users_public', {
+          search_term: searchQuery
+        });
+
+        if (error) throw error;
+
+        const mappedContacts: Contact[] = (data || []).map((user: any) => ({
+          id: user.id,
+          name: user.name || user.username,
+          username: user.username,
+          avatar_url: user.avatar_url,
+          is_online: user.is_online
+        }));
+
+        setContacts(mappedContacts);
+      } catch (error) {
+        console.error("Search error:", error);
+        toast.error("Failed to search users");
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const debounce = setTimeout(searchUsers, 300);
+    return () => clearTimeout(debounce);
+  }, [searchQuery]);
 
   const quickAmounts = [50, 100, 250, 500, 1000, 2000];
 
-  const handleSendMoney = () => {
+  const handleSendMoney = async () => {
     if (!amount || !selectedContact || parseFloat(amount) <= 0) return;
 
-    // Create and add the transaction
-    const transaction = transactionStore.addTransaction({
-      type: "sent",
-      amount: parseFloat(amount),
-      description: note || `Payment to ${selectedContact.name}`,
-      status: "completed",
-      recipient: selectedContact.name,
-      note: note
-    });
+    const sendAmount = parseFloat(amount);
 
-    // Navigate to receipt with transaction data
-    navigate('/transaction-receipt', { 
-      state: { 
-        transaction: {
-          type: 'send_money',
-          amount: parseFloat(amount),
-          recipient: selectedContact.name,
-          transactionId: transaction.transactionId,
-          timestamp: transaction.timestamp,
-          status: 'completed',
-          note: note
+    // Client-side balance check (server will verify too)
+    if (sendAmount > walletBalance) {
+      toast.error("Insufficient balance");
+      return;
+    }
+
+    setIsSending(true);
+
+    try {
+      const result = await walletService.transfer(
+        selectedContact.id,
+        sendAmount,
+        note || undefined
+      );
+
+      if (!result.success) {
+        if (result.duplicate) {
+          toast.warning("This transaction was already processed");
+        } else {
+          toast.error(result.error || "Transfer failed");
         }
-      } 
-    });
+        return;
+      }
+
+      // Navigate to receipt with real transaction data
+      navigate('/transaction-receipt', { 
+        state: { 
+          transaction: {
+            type: 'send_money',
+            amount: sendAmount,
+            recipient: selectedContact.name,
+            transactionId: result.transaction?.reference_id,
+            timestamp: result.transaction?.created_at,
+            status: result.transaction?.status || 'completed',
+            note: note,
+            balance_after: result.transaction?.balance_after
+          }
+        } 
+      });
+    } catch (error) {
+      console.error("Transfer error:", error);
+      toast.error("Failed to send money. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
   };
+
+  const insufficientBalance = parseFloat(amount || "0") > walletBalance;
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,8 +156,19 @@ const SendMoney = () => {
         </div>
       </div>
 
+      {/* Balance Display */}
+      <div className="px-4 pt-4">
+        <div className="text-sm text-muted-foreground mb-2">
+          Available Balance: {isLoadingBalance ? (
+            <span className="animate-pulse">Loading...</span>
+          ) : (
+            <span className="font-semibold text-foreground">{walletBalance.toFixed(2)} ETB</span>
+          )}
+        </div>
+      </div>
+
       {/* Amount Input */}
-      <div className="p-4">
+      <div className="p-4 pt-2">
         <Card className="p-6">
           <div className="text-center mb-6">
             <Label className="text-sm text-muted-foreground">Amount to send</Label>
@@ -107,10 +178,18 @@ const SendMoney = () => {
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="text-center text-3xl font-bold border-0 focus-visible:ring-0 bg-transparent"
+                className={`text-center text-3xl font-bold border-0 focus-visible:ring-0 bg-transparent ${
+                  insufficientBalance ? 'text-destructive' : ''
+                }`}
               />
               <span className="text-3xl font-bold text-muted-foreground ml-2">ETB</span>
             </div>
+            {insufficientBalance && (
+              <div className="flex items-center justify-center gap-1 mt-2 text-destructive text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <span>Insufficient balance</span>
+              </div>
+            )}
           </div>
 
           {/* Quick Amount Buttons */}
@@ -121,6 +200,7 @@ const SendMoney = () => {
                 variant="outline"
                 onClick={() => setAmount(quickAmount.toString())}
                 className="h-10"
+                disabled={quickAmount > walletBalance}
               >
                 {quickAmount}
               </Button>
@@ -137,12 +217,13 @@ const SendMoney = () => {
               <div className="flex items-center space-x-3">
                 <ChatAvatar
                   name={selectedContact.name}
-                  status={selectedContact.status}
+                  status={selectedContact.is_online ? "online" : "offline"}
                   size="md"
+                  src={selectedContact.avatar_url}
                 />
                 <div>
                   <h3 className="font-medium text-foreground">{selectedContact.name}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedContact.phone}</p>
+                  <p className="text-sm text-muted-foreground">@{selectedContact.username}</p>
                 </div>
               </div>
               <Button 
@@ -166,34 +247,49 @@ const SendMoney = () => {
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search contacts..."
+              placeholder="Search by username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
 
-          {/* Contacts List */}
+          {/* Search Results */}
           <div className="space-y-2">
-            {filteredContacts.map((contact) => (
-              <Card
-                key={contact.id}
-                className="p-3 cursor-pointer hover:bg-muted/50 transition-smooth"
-                onClick={() => setSelectedContact(contact)}
-              >
-                <div className="flex items-center space-x-3">
-                  <ChatAvatar
-                    name={contact.name}
-                    status={contact.status}
-                    size="sm"
-                  />
-                  <div>
-                    <h4 className="font-medium text-foreground">{contact.name}</h4>
-                    <p className="text-sm text-muted-foreground">{contact.phone}</p>
+            {isSearching ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : searchQuery.length < 2 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Type at least 2 characters to search
+              </p>
+            ) : contacts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No users found
+              </p>
+            ) : (
+              contacts.map((contact) => (
+                <Card
+                  key={contact.id}
+                  className="p-3 cursor-pointer hover:bg-muted/50 transition-smooth"
+                  onClick={() => setSelectedContact(contact)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <ChatAvatar
+                      name={contact.name}
+                      status={contact.is_online ? "online" : "offline"}
+                      size="sm"
+                      src={contact.avatar_url}
+                    />
+                    <div>
+                      <h4 className="font-medium text-foreground">{contact.name}</h4>
+                      <p className="text-sm text-muted-foreground">@{contact.username}</p>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -215,11 +311,20 @@ const SendMoney = () => {
       <div className="p-4">
         <Button 
           onClick={handleSendMoney}
-          disabled={!amount || !selectedContact || parseFloat(amount) <= 0}
+          disabled={!amount || !selectedContact || parseFloat(amount) <= 0 || insufficientBalance || isSending}
           className="w-full h-12 bg-gradient-primary hover:opacity-90"
         >
-          <Send className="h-4 w-4 mr-2" />
-          Send {amount ? `${amount} ETB` : 'Money'}
+          {isSending ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Sending...
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4 mr-2" />
+              Send {amount ? `${amount} ETB` : 'Money'}
+            </>
+          )}
         </Button>
       </div>
     </div>
