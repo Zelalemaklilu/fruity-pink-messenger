@@ -64,7 +64,11 @@ export default {
 					away: 'hsl(var(--away))',
 					offline: 'hsl(var(--offline))'
 				},
-				'read-receipt': 'hsl(var(--read-receipt))'
+				'read-receipt': 'hsl(var(--read-receipt))',
+				call: {
+					accept: 'hsl(var(--call-accept))',
+					'accept-foreground': 'hsl(var(--call-accept-foreground))'
+				}
 			},
 			backgroundImage: {
 				'gradient-primary': 'var(--gradient-primary)',
