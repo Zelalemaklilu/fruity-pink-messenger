@@ -6,38 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useCall } from "@/contexts/CallContext";
+import { callLogService, CallLogWithProfile } from "@/lib/callLogService";
 import { toast } from "sonner";
-
-interface CallLog {
-  id: string;
-  peerId: string;
-  peerName: string;
-  peerAvatar?: string;
-  type: "incoming" | "outgoing" | "missed";
-  callType: "voice" | "video";
-  timestamp: Date;
-  duration?: number;
-}
-
-// For now, we'll use local storage to persist call logs
-// In production, you'd store these in Supabase
-const CALL_LOGS_KEY = 'zeshopp_call_logs';
-
-const getCallLogs = (): CallLog[] => {
-  try {
-    const stored = localStorage.getItem(CALL_LOGS_KEY);
-    if (stored) {
-      const logs = JSON.parse(stored);
-      return logs.map((log: CallLog) => ({
-        ...log,
-        timestamp: new Date(log.timestamp)
-      }));
-    }
-  } catch (err) {
-    console.error('Failed to load call logs:', err);
-  }
-  return [];
-};
 
 const formatDuration = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
@@ -45,7 +15,8 @@ const formatDuration = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-const formatTimestamp = (date: Date): string => {
+const formatTimestamp = (dateStr: string): string => {
+  const date = new Date(dateStr);
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   
@@ -67,35 +38,20 @@ const formatTimestamp = (date: Date): string => {
 const Calls = () => {
   const navigate = useNavigate();
   const { startCall, callState, isReady } = useCall();
-  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
-  const [contacts, setContacts] = useState<Map<string, { name: string; avatar_url?: string }>>(new Map());
+  const [callLogs, setCallLogs] = useState<CallLogWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Load call logs and enrich with contact info
+  // Load call logs from database
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       
-      const logs = getCallLogs();
-      setCallLogs(logs);
-
-      // Get unique peer IDs
-      const peerIds = [...new Set(logs.map(log => log.peerId))];
-      
-      if (peerIds.length > 0) {
-        // Fetch profiles for these peers
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, name, avatar_url')
-          .in('id', peerIds);
-
-        if (profiles) {
-          const contactMap = new Map<string, { name: string; avatar_url?: string }>();
-          profiles.forEach(p => {
-            contactMap.set(p.id, { name: p.name || 'Unknown', avatar_url: p.avatar_url || undefined });
-          });
-          setContacts(contactMap);
-        }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        const logs = await callLogService.getCallLogs(50);
+        setCallLogs(logs);
       }
 
       setLoading(false);
@@ -104,19 +60,44 @@ const Calls = () => {
     loadData();
   }, []);
 
-  const getCallIcon = (type: string, callType: string) => {
-    if (type === "missed") {
+  // Subscribe to new call logs
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const unsubscribe = callLogService.subscribeToCallLogs(currentUserId, (newLog) => {
+      // Refresh call logs when a new one arrives
+      callLogService.getCallLogs(50).then(setCallLogs);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUserId]);
+
+  const getCallIcon = (log: CallLogWithProfile) => {
+    const isOutgoing = log.caller_id === currentUserId;
+    
+    if (log.status === "missed" || log.status === "rejected") {
       return <PhoneMissed className="h-4 w-4 text-destructive" />;
-    } else if (type === "incoming") {
+    } else if (!isOutgoing) {
       return <PhoneIncoming className="h-4 w-4 text-call-accept" />;
     } else {
-      return callType === "video" ? 
+      return log.call_type === "video" ? 
         <Video className="h-4 w-4 text-primary" /> : 
         <PhoneCall className="h-4 w-4 text-call-accept" />;
     }
   };
 
-  const handleCallClick = async (log: CallLog) => {
+  const getCallTypeLabel = (log: CallLogWithProfile): string => {
+    const isOutgoing = log.caller_id === currentUserId;
+    
+    if (log.status === "missed") return "Missed";
+    if (log.status === "rejected") return "Declined";
+    if (log.status === "failed") return "Failed";
+    return isOutgoing ? "Outgoing" : "Incoming";
+  };
+
+  const handleCallClick = async (log: CallLogWithProfile) => {
     if (!isReady) {
       toast.error('Call system not ready');
       return;
@@ -127,13 +108,26 @@ const Calls = () => {
       return;
     }
 
-    const contact = contacts.get(log.peerId);
+    // Determine who to call (the other person in the call)
+    const isOutgoing = log.caller_id === currentUserId;
+    const peerId = isOutgoing ? log.receiver_id : log.caller_id;
+    const peerProfile = isOutgoing ? log.receiver_profile : log.caller_profile;
+
     await startCall(
-      log.peerId, 
-      contact?.name || log.peerName, 
-      log.callType, 
-      contact?.avatar_url || log.peerAvatar
+      peerId, 
+      peerProfile?.name || 'Unknown', 
+      log.call_type, 
+      peerProfile?.avatar_url || undefined
     );
+  };
+
+  const getPeerInfo = (log: CallLogWithProfile) => {
+    const isOutgoing = log.caller_id === currentUserId;
+    const peerProfile = isOutgoing ? log.receiver_profile : log.caller_profile;
+    return {
+      name: peerProfile?.name || 'Unknown',
+      avatar: peerProfile?.avatar_url || undefined,
+    };
   };
 
   if (loading) {
@@ -175,9 +169,8 @@ const Calls = () => {
         /* Calls List */
         <div className="divide-y divide-border">
           {callLogs.map((log) => {
-            const contact = contacts.get(log.peerId);
-            const displayName = contact?.name || log.peerName;
-            const displayAvatar = contact?.avatar_url || log.peerAvatar;
+            const peer = getPeerInfo(log);
+            const isMissedOrRejected = log.status === 'missed' || log.status === 'rejected';
 
             return (
               <div
@@ -185,25 +178,25 @@ const Calls = () => {
                 className="flex items-center space-x-3 p-4 hover:bg-muted/50 transition-all"
               >
                 <ChatAvatar
-                  name={displayName}
-                  src={displayAvatar}
+                  name={peer.name}
+                  src={peer.avatar}
                   size="md"
                 />
                 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
-                    <h3 className={`font-semibold truncate ${log.type === 'missed' ? 'text-destructive' : 'text-foreground'}`}>
-                      {displayName}
+                    <h3 className={`font-semibold truncate ${isMissedOrRejected ? 'text-destructive' : 'text-foreground'}`}>
+                      {peer.name}
                     </h3>
-                    {getCallIcon(log.type, log.callType)}
+                    {getCallIcon(log)}
                   </div>
                   <div className="flex items-center space-x-2">
                     <p className="text-sm text-muted-foreground">
-                      {formatTimestamp(log.timestamp)}
+                      {getCallTypeLabel(log)} • {formatTimestamp(log.created_at)}
                     </p>
-                    {log.duration && (
+                    {log.duration_seconds && log.duration_seconds > 0 && (
                       <Badge variant="secondary" className="text-xs">
-                        {formatDuration(log.duration)}
+                        {formatDuration(log.duration_seconds)}
                       </Badge>
                     )}
                   </div>
@@ -216,7 +209,7 @@ const Calls = () => {
                   className="text-primary hover:text-primary/80"
                   disabled={callState !== 'idle'}
                 >
-                  {log.callType === "video" ? 
+                  {log.call_type === "video" ? 
                     <Video className="h-5 w-5" /> : 
                     <Phone className="h-5 w-5" />
                   }

@@ -1,19 +1,29 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
 import { useNavigate } from "react-router-dom";
 import { getProfile, Profile } from "@/lib/supabaseService";
 import { signOut } from "@/lib/supabaseAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const Settings = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const { 
+    isSupported: pushSupported, 
+    isSubscribed: pushSubscribed,
+    isLoading: pushLoading,
+    requestPermission: enablePush,
+    unsubscribe: disablePush,
+  } = usePushNotifications();
 
   useEffect(() => {
     loadProfile();
@@ -157,6 +167,30 @@ const Settings = () => {
         </Card>
       </div>
 
+      {/* Notification Settings */}
+      {pushSupported && (
+        <div className="px-4 mb-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 rounded-lg bg-muted text-primary">
+                  {pushSubscribed ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Call Notifications</span>
+                  <p className="text-xs text-muted-foreground">Get notified for incoming calls</p>
+                </div>
+              </div>
+              <Switch
+                checked={pushSubscribed}
+                disabled={pushLoading}
+                onCheckedChange={(checked) => checked ? enablePush() : disablePush()}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Menu Items */}
       <div className="px-4 space-y-2">
         {menuItems.map((item, index) => (
@@ -178,7 +212,7 @@ const Settings = () => {
       {/* Logout Section */}
       <div className="p-4">
         <Card className="p-4">
-          <Button 
+          <Button
             variant="ghost" 
             className="w-full justify-start text-destructive hover:text-destructive"
             onClick={handleLogout}
