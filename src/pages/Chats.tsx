@@ -205,35 +205,32 @@ const Chats = () => {
         )}
       </div>
 
-      {/* Loading State */}
-      {loading ? (
+      {/* Chat List - show immediately from cache, loading only when truly empty */}
+      {chats.length === 0 && loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       ) : (
-        <>
-          {/* Chat List */}
-          <div className="divide-y divide-border">
-            {filteredChats.length === 0 ? (
-              <div className="text-center py-12 px-4">
-                <p className="text-muted-foreground">
-                  {searchQuery ? "No chats found" : "No chats yet"}
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Search for @username to start a conversation
-                </p>
-              </div>
-            ) : (
-              filteredChats.map((chat) => (
-                <ChatItem
-                  key={chat.id}
-                  chat={chat}
-                  onClick={() => handleChatClick(chat.id)}
-                />
-              ))
-            )}
-          </div>
-        </>
+        <div className="divide-y divide-border">
+          {filteredChats.length === 0 ? (
+            <div className="text-center py-12 px-4">
+              <p className="text-muted-foreground">
+                {searchQuery ? "No chats found" : "No chats yet"}
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Search for @username to start a conversation
+              </p>
+            </div>
+          ) : (
+            filteredChats.map((chat) => (
+              <ChatItem
+                key={chat.id}
+                chat={chat}
+                onClick={() => handleChatClick(chat.id)}
+              />
+            ))
+          )}
+        </div>
       )}
 
       {/* Floating Action Button */}

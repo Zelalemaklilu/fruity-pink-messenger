@@ -228,10 +228,15 @@ const Chat = () => {
   const chatAvatar = otherProfile?.avatar_url || "";
   const isOnline = otherProfile?.is_online || false;
   const isTyping = typingUsers.length > 0;
-  const isLoading = chatLoading || messagesLoading;
+  
+  // Only show loading if we have NO cached data at all
+  const hasCachedMessages = messages.length > 0;
+  const hasCachedChat = !!chat;
+  const isLoading = !hasCachedMessages && !hasCachedChat && (chatLoading || messagesLoading);
 
-  // Error state - chat not found or no access
-  if (!chatLoading && !chat && chatId) {
+  // Error state - only show if not loading AND truly no access (give it time)
+  // Don't show error immediately - wait for store to be ready
+  if (!chatLoading && !messagesLoading && !chat && chatId && currentUserId) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border p-4 z-10">
@@ -305,9 +310,9 @@ const Chat = () => {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Messages - show cached content immediately, loading spinner only when truly empty */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {isLoading ? (
+        {messages.length === 0 && isLoading ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
