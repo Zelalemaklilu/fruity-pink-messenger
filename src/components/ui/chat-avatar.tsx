@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 interface ChatAvatarProps {
   src?: string;
   name: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   status?: "online" | "away" | "offline";
   className?: string;
 }
@@ -13,7 +13,8 @@ export function ChatAvatar({ src, name, size = "md", status, className }: ChatAv
   const sizeClasses = {
     sm: "h-8 w-8",
     md: "h-10 w-10", 
-    lg: "h-16 w-16"
+    lg: "h-16 w-16",
+    xl: "h-32 w-32"
   };
 
   const getInitials = (name: string) => {

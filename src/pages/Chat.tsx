@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeft, Phone, Video, MoreVertical, Paperclip, Send, Image, File, Loader2 } from "lucide-react";
+import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
@@ -10,6 +10,7 @@ import { chatStore } from "@/lib/chatStore";
 import { uploadChatImage, uploadChatFile, compressImage, validateFile } from "@/lib/supabaseStorage";
 import { toast } from "sonner";
 import { Virtuoso } from "react-virtuoso";
+import { CallButton } from "@/components/call/CallButton";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -274,12 +275,14 @@ const Chat = () => {
               {isTyping ? "typing..." : isOnline ? "online" : "offline"}
             </p>
           </div>
-          <Button variant="ghost" size="icon">
-            <Phone className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <Video className="h-5 w-5" />
-          </Button>
+          {otherUserId && (
+            <CallButton
+              peerId={otherUserId}
+              peerName={chatName}
+              peerAvatar={chatAvatar}
+              variant="icon"
+            />
+          )}
           <Button variant="ghost" size="icon">
             <MoreVertical className="h-5 w-5" />
           </Button>

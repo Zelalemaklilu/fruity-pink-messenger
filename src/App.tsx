@@ -32,6 +32,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { updateOnlineStatus } from "@/lib/supabaseService";
 import logoImage from "@/assets/zeshopp-logo.jpg";
 import type { User } from "@supabase/supabase-js";
+import { CallProvider } from "@/contexts/CallContext";
+import { CallOverlay } from "@/components/call/CallOverlay";
 
 const queryClient = new QueryClient();
 
@@ -224,7 +226,10 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <AppRoutes />
+            <CallProvider>
+              <AppRoutes />
+              <CallOverlay />
+            </CallProvider>
           </BrowserRouter>
         </div>
       </TooltipProvider>
