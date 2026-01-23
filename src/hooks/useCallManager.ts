@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useWebRTC, CallType } from './useWebRTC';
 import { useCallSignaling, CallOffer, CallAnswer, IceCandidate, CallStateEvent } from './useCallSignaling';
+import { callLogService } from '@/lib/callLogService';
+import { pushNotificationService } from '@/lib/pushNotificationService';
 
 export type CallState = 
   | 'idle'
@@ -21,6 +23,7 @@ export interface ActiveCall {
   callType: CallType;
   isOutgoing: boolean;
   startTime?: Date;
+  callLogId?: string; // Database call log ID
 }
 
 interface UseCallManagerProps {
@@ -159,6 +162,14 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
         userAvatar
       );
 
+      // Create call log in database
+      const callLogId = await callLogService.createCallLog({
+        callerId: userId,
+        receiverId: peerId,
+        callType,
+        roomId,
+      });
+
       setActiveCall({
         roomId,
         peerId,
@@ -166,6 +177,7 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
         peerAvatar,
         callType,
         isOutgoing: true,
+        callLogId: callLogId || undefined,
       });
 
       // Set call timeout
@@ -249,14 +261,26 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
   }, [signaling, resetCall]);
 
   // End current call
-  const endCall = useCallback(() => {
+  const endCall = useCallback(async () => {
     if (activeCall) {
       signaling.sendCallState(activeCall.peerId, 'ended', activeCall.roomId);
+      
+      // Update call log with completion status
+      if (activeCall.callLogId) {
+        await callLogService.updateCallLog(
+          activeCall.callLogId,
+          'completed',
+          callDuration
+        );
+      }
+      
+      // Close any call notification
+      pushNotificationService.closeCallNotification();
     }
     
     setCallState('call_ended');
     setTimeout(resetCall, 2000);
-  }, [activeCall, signaling, resetCall]);
+  }, [activeCall, signaling, resetCall, callDuration]);
 
   // Toggle mute
   const toggleMute = useCallback(() => {
@@ -293,11 +317,15 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
     });
     setCallState('incoming_ringing');
 
+    // Show push notification for incoming call
+    pushNotificationService.showIncomingCallNotification(offer.callerName, offer.callType);
+
     // Set missed call timeout
     callTimeoutRef.current = setTimeout(() => {
       setCallState(currentState => {
         if (currentState === 'incoming_ringing') {
           signaling.sendCallState(offer.callerId, 'timeout', offer.roomId);
+          pushNotificationService.closeCallNotification();
           setTimeout(resetCall, 3000);
           return 'missed';
         }
@@ -386,14 +414,13 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
     };
   }, [userId, signaling, handleIncomingCall, handleCallAnswer, handleReceivedIceCandidate, handleCallStateEvent]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - use empty deps to run only on unmount
   useEffect(() => {
     return () => {
-      clearCallTimeout();
-      stopDurationTimer();
-      webRTC.cleanup();
+      if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
+      if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     };
-  }, [clearCallTimeout, stopDurationTimer, webRTC]);
+  }, []);
 
   return {
     // State
