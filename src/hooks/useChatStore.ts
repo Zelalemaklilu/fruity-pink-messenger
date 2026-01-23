@@ -1,44 +1,85 @@
 /**
  * React hooks for the ChatStore
  * Provides reactive bindings to the in-memory chat store
+ * Optimized for instant navigation (Telegram-grade speed)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { chatStore, Chat, Message, PublicProfile } from '@/lib/chatStore';
 import { supabase } from '@/integrations/supabase/client';
 
 // =============================================
-// STORE INITIALIZATION
+// GLOBAL INITIALIZATION STATE
+// =============================================
+
+let globalInitPromise: Promise<void> | null = null;
+let globalUserId: string | null = null;
+let globalIsReady = false;
+const readyListeners = new Set<() => void>();
+
+const notifyReadyListeners = () => {
+  readyListeners.forEach(listener => listener());
+};
+
+const initializeStore = async (): Promise<void> => {
+  if (globalIsReady) return;
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && user.id !== globalUserId) {
+      globalUserId = user.id;
+      await chatStore.initialize(user.id);
+      globalIsReady = true;
+      notifyReadyListeners();
+    } else if (user && user.id === globalUserId) {
+      globalIsReady = true;
+      notifyReadyListeners();
+    }
+  } catch (error) {
+    console.error('[useChatStore] Init error:', error);
+  }
+};
+
+// Subscribe to auth changes globally
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT') {
+    globalUserId = null;
+    globalIsReady = false;
+    chatStore.cleanup();
+    notifyReadyListeners();
+  } else if (session?.user && session.user.id !== globalUserId) {
+    globalUserId = session.user.id;
+    globalIsReady = false;
+    globalInitPromise = initializeStore();
+  }
+});
+
+// =============================================
+// STORE INITIALIZATION HOOK
 // =============================================
 
 export function useChatStoreInit(): { isReady: boolean; userId: string | null } {
-  const [isReady, setIsReady] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const initRef = useRef(false);
-
+  const [, forceUpdate] = useState({});
+  
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setUserId(user.id);
-        chatStore.initialize(user.id).then(() => {
-          setIsReady(true);
-        });
-      }
-    });
-
+    const listener = () => forceUpdate({});
+    readyListeners.add(listener);
+    
+    // Start initialization if not already started
+    if (!globalInitPromise && !globalIsReady) {
+      globalInitPromise = initializeStore();
+    }
+    
     return () => {
-      // Don't cleanup on unmount - store persists across navigation
+      readyListeners.delete(listener);
     };
   }, []);
 
-  return { isReady, userId };
+  return { isReady: globalIsReady, userId: globalUserId };
 }
 
 // =============================================
-// CHAT LIST HOOK
+// CHAT LIST HOOK - INSTANT FROM CACHE
 // =============================================
 
 export function useChatList(): {
@@ -46,17 +87,20 @@ export function useChatList(): {
   loading: boolean;
   totalUnread: number;
 } {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chats, setChats] = useState<Chat[]>(() => chatStore.getChatList());
+  const [loading, setLoading] = useState(!globalIsReady);
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
-    if (!isReady) return;
-
-    setLoading(false);
+    if (isReady) {
+      setLoading(false);
+      // Get initial data from cache immediately
+      setChats(chatStore.getChatList());
+    }
     
     const unsubscribe = chatStore.subscribeChatList((newChats) => {
       setChats(newChats);
+      setLoading(false);
     });
 
     return unsubscribe;
@@ -68,7 +112,7 @@ export function useChatList(): {
 }
 
 // =============================================
-// MESSAGES HOOK
+// MESSAGES HOOK - SHOW CACHED INSTANTLY
 // =============================================
 
 export function useMessages(chatId: string | undefined): {
@@ -77,31 +121,57 @@ export function useMessages(chatId: string | undefined): {
   sendMessage: (content: string, type?: 'text' | 'image' | 'file' | 'voice', mediaUrl?: string, fileName?: string) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<boolean>;
 } {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Get cached messages immediately (no async)
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (chatId) {
+      return chatStore.getMessages(chatId);
+    }
+    return [];
+  });
+  
+  // Only show loading if no cached messages exist
+  const [loading, setLoading] = useState(() => {
+    if (!chatId) return false;
+    const cached = chatStore.getMessages(chatId);
+    return cached.length === 0 && !globalIsReady;
+  });
+  
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
-    if (!isReady || !chatId) {
+    if (!chatId) {
+      setMessages([]);
       setLoading(false);
       return;
     }
 
-    // Load messages (uses cache if available)
-    chatStore.loadMessages(chatId).then(() => {
+    // Show cached immediately
+    const cached = chatStore.getMessages(chatId);
+    if (cached.length > 0) {
+      setMessages(cached);
+      setLoading(false);
+    }
+
+    // Subscribe to updates (will get cache immediately too)
+    const unsubscribe = chatStore.subscribeToMessages(chatId, (newMessages) => {
+      setMessages(newMessages);
       setLoading(false);
     });
 
-    // Subscribe to updates
-    const unsubscribe = chatStore.subscribeToMessages(chatId, (newMessages) => {
-      setMessages(newMessages);
-    });
+    // Load from server in background (only if ready)
+    if (isReady) {
+      chatStore.loadMessages(chatId).then(() => {
+        setLoading(false);
+      });
+    }
 
     // Mark as read when viewing
-    chatStore.markAsRead(chatId);
+    if (isReady) {
+      chatStore.markAsRead(chatId);
+    }
 
     return unsubscribe;
-  }, [isReady, chatId]);
+  }, [chatId, isReady]);
 
   const sendMessage = useCallback(async (
     content: string,
@@ -150,24 +220,33 @@ export function useTypingIndicator(chatId: string | undefined): {
 }
 
 // =============================================
-// PROFILE HOOK
+// PROFILE HOOK - INSTANT FROM CACHE
 // =============================================
 
 export function useProfile(userId: string | undefined): {
   profile: PublicProfile | null;
   loading: boolean;
 } {
-  const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<PublicProfile | null>(() => {
+    if (userId) {
+      return chatStore.getCachedProfile(userId) || null;
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!userId) return false;
+    return !chatStore.getCachedProfile(userId);
+  });
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
-    if (!isReady || !userId) {
+    if (!userId) {
+      setProfile(null);
       setLoading(false);
       return;
     }
 
-    // Check cache first
+    // Check cache first (instant)
     const cached = chatStore.getCachedProfile(userId);
     if (cached) {
       setProfile(cached);
@@ -175,18 +254,20 @@ export function useProfile(userId: string | undefined): {
       return;
     }
 
-    // Fetch from server
-    chatStore.getProfile(userId).then((p) => {
-      setProfile(p);
-      setLoading(false);
-    });
+    // Fetch from server only if ready
+    if (isReady) {
+      chatStore.getProfile(userId).then((p) => {
+        setProfile(p);
+        setLoading(false);
+      });
+    }
   }, [isReady, userId]);
 
   return { profile, loading };
 }
 
 // =============================================
-// CHAT INFO HOOK
+// CHAT INFO HOOK - INSTANT FROM CACHE
 // =============================================
 
 export function useChatInfo(chatId: string | undefined): {
@@ -194,16 +275,26 @@ export function useChatInfo(chatId: string | undefined): {
   otherUserId: string | null;
   loading: boolean;
 } {
-  const [chat, setChat] = useState<Chat | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [chat, setChat] = useState<Chat | null>(() => {
+    if (chatId) {
+      return chatStore.getChat(chatId) || null;
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!chatId) return false;
+    return !chatStore.getChat(chatId);
+  });
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
-    if (!isReady || !chatId) {
+    if (!chatId) {
+      setChat(null);
       setLoading(false);
       return;
     }
 
+    // Get from cache immediately (instant)
     const cachedChat = chatStore.getChat(chatId);
     if (cachedChat) {
       setChat(cachedChat);
@@ -216,11 +307,14 @@ export function useChatInfo(chatId: string | undefined): {
       if (updated) {
         setChat(updated);
         setLoading(false);
+      } else if (isReady && !cachedChat) {
+        // Chat not found after ready
+        setLoading(false);
       }
     });
 
     return unsubscribe;
-  }, [isReady, chatId]);
+  }, [chatId, isReady]);
 
   const otherUserId = chat ? chatStore.getOtherUserId(chat) : null;
 
