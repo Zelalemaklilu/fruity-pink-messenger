@@ -34,6 +34,7 @@ import logoImage from "@/assets/zeshopp-logo.jpg";
 import type { User } from "@supabase/supabase-js";
 import { CallProvider } from "@/contexts/CallContext";
 import { CallOverlay } from "@/components/call/CallOverlay";
+import { DevHealthBanner } from "@/components/dev/DevHealthBanner";
 
 const queryClient = new QueryClient();
 
@@ -229,6 +230,7 @@ const App = () => {
             <CallProvider>
               <AppRoutes />
               <CallOverlay />
+              <DevHealthBanner />
             </CallProvider>
           </BrowserRouter>
         </div>
