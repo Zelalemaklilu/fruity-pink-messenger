@@ -35,7 +35,11 @@ const initializeStore = async (): Promise<void> => {
       globalIsReady = true;
       notifyReadyListeners();
     }
-  } catch (error) {
+  } catch (error: any) {
+    // Silently ignore AbortError - happens during rapid navigation
+    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      return;
+    }
     console.error('[useChatStore] Init error:', error);
   }
 };

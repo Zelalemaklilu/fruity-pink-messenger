@@ -136,23 +136,31 @@ class ChatStore {
   private async loadChats(): Promise<void> {
     if (!this.currentUserId) return;
     
-    const { data, error } = await supabase
-      .from('chats')
-      .select('*')
-      .or(`participant_1.eq.${this.currentUserId},participant_2.eq.${this.currentUserId}`)
-      .order('last_message_time', { ascending: false, nullsFirst: false });
-    
-    if (error) {
-      console.error('[ChatStore] Error loading chats:', error);
-      return;
+    try {
+      const { data, error } = await supabase
+        .from('chats')
+        .select('*')
+        .or(`participant_1.eq.${this.currentUserId},participant_2.eq.${this.currentUserId}`)
+        .order('last_message_time', { ascending: false, nullsFirst: false });
+      
+      if (error) {
+        // Silently ignore AbortError
+        if (error.message?.includes('aborted')) return;
+        console.error('[ChatStore] Error loading chats:', error);
+        return;
+      }
+      
+      // Update cache
+      this.chats.clear();
+      (data || []).forEach(chat => this.chats.set(chat.id, chat));
+      
+      // Notify listeners
+      this.notifyChatListeners();
+    } catch (err: any) {
+      // Silently ignore AbortError
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return;
+      console.error('[ChatStore] Error loading chats:', err);
     }
-    
-    // Update cache
-    this.chats.clear();
-    (data || []).forEach(chat => this.chats.set(chat.id, chat));
-    
-    // Notify listeners
-    this.notifyChatListeners();
   }
 
   private subscribeToChatList(): void {
@@ -227,27 +235,40 @@ class ChatStore {
       return this.messages.get(chatId)!;
     }
     
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-      console.error('[ChatStore] Error loading messages:', error);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        // Silently ignore AbortError
+        if (error.message?.includes('aborted')) {
+          return this.messages.get(chatId) || [];
+        }
+        console.error('[ChatStore] Error loading messages:', error);
+        return this.messages.get(chatId) || [];
+      }
+      
+      const messages: Message[] = (data || []).map(msg => ({
+        ...msg,
+        message_type: msg.message_type as Message['message_type'],
+        status: msg.status as Message['status'],
+      }));
+      
+      this.messages.set(chatId, messages);
+      this.notifyMessageListeners(chatId);
+      
+      return messages;
+    } catch (err: any) {
+      // Silently ignore AbortError
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        return this.messages.get(chatId) || [];
+      }
+      console.error('[ChatStore] Error loading messages:', err);
       return this.messages.get(chatId) || [];
     }
-    
-    const messages: Message[] = (data || []).map(msg => ({
-      ...msg,
-      message_type: msg.message_type as Message['message_type'],
-      status: msg.status as Message['status'],
-    }));
-    
-    this.messages.set(chatId, messages);
-    this.notifyMessageListeners(chatId);
-    
-    return messages;
   }
 
   subscribeToMessages(chatId: string, callback: (messages: Message[]) => void): () => void {
@@ -642,18 +663,24 @@ class ChatStore {
       this.notifyMessageListeners(chatId);
     }
     
-    // Sync with server
-    await supabase
-      .from('chats')
-      .update({ [unreadField]: 0 })
-      .eq('id', chatId);
-    
-    await supabase
-      .from('messages')
-      .update({ status: 'read' })
-      .eq('chat_id', chatId)
-      .eq('receiver_id', this.currentUserId)
-      .neq('status', 'read');
+    // Sync with server (ignore AbortErrors)
+    try {
+      await supabase
+        .from('chats')
+        .update({ [unreadField]: 0 })
+        .eq('id', chatId);
+      
+      await supabase
+        .from('messages')
+        .update({ status: 'read' })
+        .eq('chat_id', chatId)
+        .eq('receiver_id', this.currentUserId)
+        .neq('status', 'read');
+    } catch (err: any) {
+      // Silently ignore AbortError
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return;
+      console.error('[ChatStore] Error marking as read:', err);
+    }
   }
 
   // =============================================
@@ -666,20 +693,29 @@ class ChatStore {
       return this.profiles.get(userId)!;
     }
     
-    // Fetch from server using RPC for public profiles
-    const { data, error } = await supabase.rpc('get_public_profile', {
-      profile_id: userId,
-    });
-    
-    if (error || !data?.[0]) {
-      console.error('[ChatStore] Error fetching profile:', error);
+    try {
+      // Fetch from server using RPC for public profiles
+      const { data, error } = await supabase.rpc('get_public_profile', {
+        profile_id: userId,
+      });
+      
+      if (error || !data?.[0]) {
+        // Silently ignore AbortError
+        if (error?.message?.includes('aborted')) return null;
+        console.error('[ChatStore] Error fetching profile:', error);
+        return null;
+      }
+      
+      const profile = data[0] as PublicProfile;
+      this.profiles.set(userId, profile);
+      
+      return profile;
+    } catch (err: any) {
+      // Silently ignore AbortError
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return null;
+      console.error('[ChatStore] Error fetching profile:', err);
       return null;
     }
-    
-    const profile = data[0] as PublicProfile;
-    this.profiles.set(userId, profile);
-    
-    return profile;
   }
 
   getCachedProfile(userId: string): PublicProfile | undefined {
