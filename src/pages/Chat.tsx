@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2 } from "lucide-react";
+import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MessageSearch } from "@/components/chat/MessageSearch";
 
 // =============================================
 // TYPES
@@ -52,6 +53,8 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showSearch, setShowSearch] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { chatId } = useParams();
@@ -88,7 +91,7 @@ const Chat = () => {
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    if (messages.length > 0 && virtuosoRef.current) {
+    if (messages.length > 0 && virtuosoRef.current && !highlightedMessageId) {
       // Only auto-scroll if we haven't manually scrolled or it's a new message
       setTimeout(() => {
         virtuosoRef.current?.scrollToIndex({ 
@@ -98,7 +101,32 @@ const Chat = () => {
         scrolledRef.current = true;
       }, 50);
     }
-  }, [messages.length]);
+  }, [messages.length, highlightedMessageId]);
+
+  // Handle search result selection - scroll to message
+  const handleSearchResultSelect = useCallback((messageId: string) => {
+    setHighlightedMessageId(messageId);
+    
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex >= 0 && virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({
+        index: messageIndex,
+        behavior: 'smooth',
+        align: 'center'
+      });
+    }
+
+    // Clear highlight after 2 seconds
+    setTimeout(() => {
+      setHighlightedMessageId(null);
+    }, 2000);
+  }, [messages]);
+
+  // Close search
+  const handleCloseSearch = useCallback(() => {
+    setShowSearch(false);
+    setHighlightedMessageId(null);
+  }, []);
 
   // Handle typing indicator
   const handleTyping = useCallback(() => {
@@ -288,11 +316,23 @@ const Chat = () => {
               variant="icon"
             />
           )}
+          <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)}>
+            <Search className="h-5 w-5" />
+          </Button>
           <Button variant="ghost" size="icon">
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
       </div>
+
+      {/* Search Bar */}
+      {showSearch && chatId && (
+        <MessageSearch 
+          chatId={chatId}
+          onResultSelect={handleSearchResultSelect}
+          onClose={handleCloseSearch}
+        />
+      )}
 
       {/* Upload Progress */}
       {uploading && (
@@ -327,7 +367,13 @@ const Chat = () => {
             data={messages}
             overscan={200}
             itemContent={(index, message) => (
-              <div className="px-4 py-1">
+              <div 
+                className={`px-4 py-1 transition-all duration-300 ${
+                  highlightedMessageId === message.id 
+                    ? 'bg-primary/20 ring-2 ring-primary/40 rounded-lg' 
+                    : ''
+                }`}
+              >
                 <MessageBubble
                   message={message.text}
                   timestamp={message.timestamp}
