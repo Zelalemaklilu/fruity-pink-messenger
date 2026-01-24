@@ -18,30 +18,55 @@ let globalIsReady = false;
 let initStarted = false;
 const readyListeners = new Set<() => void>();
 
+const INIT_MAX_WAIT_MS = 12_000;
+const INIT_RETRY_INTERVAL_MS = 400;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 const notifyReadyListeners = () => {
   readyListeners.forEach(listener => listener());
 };
 
 const initializeStore = async (): Promise<void> => {
   if (globalIsReady) return;
-  
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      if (user.id !== globalUserId) {
-        globalUserId = user.id;
+
+  const startedAt = Date.now();
+
+  while (!globalIsReady && (Date.now() - startedAt) < INIT_MAX_WAIT_MS) {
+    try {
+      // Prefer session (fast + reliable after SIGNED_IN). Fallback to getUser.
+      const { data: { session } } = await supabase.auth.getSession();
+      const sessionUser = session?.user;
+      const { data: { user: directUser } } = sessionUser ? { data: { user: sessionUser } } : await supabase.auth.getUser();
+      const user = directUser;
+
+      if (user) {
+        if (user.id !== globalUserId) {
+          globalUserId = user.id;
+        }
+
+        // initialize() may throw AbortError (we want to retry)
         await chatStore.initialize(user.id);
+
+        globalIsReady = true;
+        notifyReadyListeners();
+        return;
       }
-      globalIsReady = true;
-      notifyReadyListeners();
+    } catch (error: any) {
+      // Retry on AbortError - happens during rapid navigation / token refresh
+      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+        await sleep(INIT_RETRY_INTERVAL_MS);
+        continue;
+      }
+      console.error('[useChatStore] Init error:', error);
     }
-  } catch (error: any) {
-    // Silently ignore AbortError - happens during rapid navigation
-    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-      return;
-    }
-    console.error('[useChatStore] Init error:', error);
+
+    // No user yet (race immediately after login). Wait and retry.
+    await sleep(INIT_RETRY_INTERVAL_MS);
   }
+
+  // Timed out. Keep not-ready, but wake listeners so UIs can drop spinners.
+  notifyReadyListeners();
 };
 
 // Subscribe to auth changes globally
@@ -53,9 +78,11 @@ supabase.auth.onAuthStateChange((event, session) => {
     globalInitPromise = null;
     chatStore.cleanup();
     notifyReadyListeners();
-  } else if (session?.user && session.user.id !== globalUserId) {
+  } else if (session?.user) {
+    // Always kick init on sign-in/refresh; it is idempotent and handles retries.
     globalUserId = session.user.id;
     globalIsReady = false;
+    initStarted = true;
     globalInitPromise = initializeStore();
   }
 });
@@ -71,13 +98,18 @@ export function useChatStoreInit(): { isReady: boolean; userId: string | null } 
     const listener = () => forceUpdate({});
     readyListeners.add(listener);
     
-    // Always try to initialize on mount - critical for page loads
-    if (!initStarted) {
+    // Ensure initialization starts (and can be retried if a prior attempt timed out)
+    if (!globalInitPromise && !globalIsReady) {
       initStarted = true;
-      globalInitPromise = initializeStore();
+      globalInitPromise = initializeStore().finally(() => {
+        // Allow future retries if we still didn't become ready (e.g. session arrived late)
+        if (!globalIsReady) {
+          initStarted = false;
+          globalInitPromise = null;
+        }
+      });
     } else if (globalInitPromise) {
-      // Wait for existing promise
-      globalInitPromise.then(() => forceUpdate({}));
+      globalInitPromise.then(() => forceUpdate({})).catch(() => {});
     }
     
     return () => {

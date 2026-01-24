@@ -89,14 +89,19 @@ class ChatStore {
   // =============================================
 
   async initialize(userId: string): Promise<void> {
-    if (this.currentUserId === userId) return;
-    
+    const isSameUser = this.currentUserId === userId;
+
+    // If we're already initialized for this user and have an active subscription + data,
+    // avoid doing work. (Important: if we previously failed and chats are still empty,
+    // we DO want to retry.)
+    if (isSameUser && this.chatListChannel && this.chats.size > 0) return;
+
     this.currentUserId = userId;
     console.log('[ChatStore] Initializing for user:', userId);
-    
-    // Load initial data
+
+    // Load initial data (throws on abort so upper layers can retry)
     await this.loadChats();
-    
+
     // Subscribe to chat list changes
     this.subscribeToChatList();
   }
@@ -144,8 +149,11 @@ class ChatStore {
         .order('last_message_time', { ascending: false, nullsFirst: false });
       
       if (error) {
-        // Silently ignore AbortError
-        if (error.message?.includes('aborted')) return;
+        // IMPORTANT: if this was aborted, bubble it up so the init layer can retry
+        if (error.message?.includes('aborted')) {
+          const err = Object.assign(new Error('AbortError: query aborted'), { name: 'AbortError' });
+          throw err;
+        }
         console.error('[ChatStore] Error loading chats:', error);
         return;
       }
@@ -157,8 +165,8 @@ class ChatStore {
       // Notify listeners
       this.notifyChatListeners();
     } catch (err: any) {
-      // Silently ignore AbortError
-      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return;
+      // IMPORTANT: if this was aborted, bubble it up so the init layer can retry
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) throw err;
       console.error('[ChatStore] Error loading chats:', err);
     }
   }
