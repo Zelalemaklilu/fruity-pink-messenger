@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 let globalInitPromise: Promise<void> | null = null;
 let globalUserId: string | null = null;
 let globalIsReady = false;
+let initStarted = false;
 const readyListeners = new Set<() => void>();
 
 const notifyReadyListeners = () => {
@@ -26,12 +27,11 @@ const initializeStore = async (): Promise<void> => {
   
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user && user.id !== globalUserId) {
-      globalUserId = user.id;
-      await chatStore.initialize(user.id);
-      globalIsReady = true;
-      notifyReadyListeners();
-    } else if (user && user.id === globalUserId) {
+    if (user) {
+      if (user.id !== globalUserId) {
+        globalUserId = user.id;
+        await chatStore.initialize(user.id);
+      }
       globalIsReady = true;
       notifyReadyListeners();
     }
@@ -49,6 +49,8 @@ supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT') {
     globalUserId = null;
     globalIsReady = false;
+    initStarted = false;
+    globalInitPromise = null;
     chatStore.cleanup();
     notifyReadyListeners();
   } else if (session?.user && session.user.id !== globalUserId) {
@@ -69,9 +71,13 @@ export function useChatStoreInit(): { isReady: boolean; userId: string | null } 
     const listener = () => forceUpdate({});
     readyListeners.add(listener);
     
-    // Start initialization if not already started
-    if (!globalInitPromise && !globalIsReady) {
+    // Always try to initialize on mount - critical for page loads
+    if (!initStarted) {
+      initStarted = true;
       globalInitPromise = initializeStore();
+    } else if (globalInitPromise) {
+      // Wait for existing promise
+      globalInitPromise.then(() => forceUpdate({}));
     }
     
     return () => {
@@ -92,20 +98,31 @@ export function useChatList(): {
   totalUnread: number;
 } {
   const [chats, setChats] = useState<Chat[]>(() => chatStore.getChatList());
-  const [loading, setLoading] = useState(!globalIsReady);
+  const [loading, setLoading] = useState(true);
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
-    if (isReady) {
-      setLoading(false);
-      // Get initial data from cache immediately
-      setChats(chatStore.getChatList());
-    }
-    
+    // Subscribe to updates first
     const unsubscribe = chatStore.subscribeChatList((newChats) => {
       setChats(newChats);
       setLoading(false);
     });
+
+    // When ready, immediately fetch data
+    if (isReady) {
+      const cached = chatStore.getChatList();
+      setChats(cached);
+      setLoading(false);
+    }
+
+    // Also handle the case where init completes after mount
+    if (globalInitPromise) {
+      globalInitPromise.then(() => {
+        const cached = chatStore.getChatList();
+        setChats(cached);
+        setLoading(false);
+      }).catch(() => {});
+    }
 
     return unsubscribe;
   }, [isReady]);
@@ -134,11 +151,7 @@ export function useMessages(chatId: string | undefined): {
   });
   
   // Only show loading if no cached messages exist
-  const [loading, setLoading] = useState(() => {
-    if (!chatId) return false;
-    const cached = chatStore.getMessages(chatId);
-    return cached.length === 0 && !globalIsReady;
-  });
+  const [loading, setLoading] = useState(true);
   
   const { isReady } = useChatStoreInit();
 
@@ -167,11 +180,17 @@ export function useMessages(chatId: string | undefined): {
       chatStore.loadMessages(chatId).then(() => {
         setLoading(false);
       });
+      chatStore.markAsRead(chatId);
     }
 
-    // Mark as read when viewing
-    if (isReady) {
-      chatStore.markAsRead(chatId);
+    // Handle initialization completing after mount
+    if (globalInitPromise) {
+      globalInitPromise.then(() => {
+        chatStore.loadMessages(chatId).then(() => {
+          setLoading(false);
+        });
+        chatStore.markAsRead(chatId);
+      }).catch(() => {});
     }
 
     return unsubscribe;
@@ -237,10 +256,7 @@ export function useProfile(userId: string | undefined): {
     }
     return null;
   });
-  const [loading, setLoading] = useState(() => {
-    if (!userId) return false;
-    return !chatStore.getCachedProfile(userId);
-  });
+  const [loading, setLoading] = useState(true);
   const { isReady } = useChatStoreInit();
 
   useEffect(() => {
@@ -264,6 +280,16 @@ export function useProfile(userId: string | undefined): {
         setProfile(p);
         setLoading(false);
       });
+    }
+
+    // Handle initialization completing after mount
+    if (globalInitPromise) {
+      globalInitPromise.then(() => {
+        chatStore.getProfile(userId).then((p) => {
+          setProfile(p);
+          setLoading(false);
+        });
+      }).catch(() => {});
     }
   }, [isReady, userId]);
 
