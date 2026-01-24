@@ -84,6 +84,13 @@ class ChatStore {
   private typingTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private localTypingState: Map<string, boolean> = new Map();
 
+  // Sync timestamps (for dev health banner)
+  private lastSyncTimes: { chats: Date | null; messages: Date | null; profiles: Date | null } = {
+    chats: null,
+    messages: null,
+    profiles: null,
+  };
+
   // =============================================
   // INITIALIZATION
   // =============================================
@@ -161,6 +168,7 @@ class ChatStore {
       // Update cache
       this.chats.clear();
       (data || []).forEach(chat => this.chats.set(chat.id, chat));
+      this.lastSyncTimes.chats = new Date();
       
       // Notify listeners
       this.notifyChatListeners();
@@ -266,6 +274,7 @@ class ChatStore {
       }));
       
       this.messages.set(chatId, messages);
+      this.lastSyncTimes.messages = new Date();
       this.notifyMessageListeners(chatId);
       
       return messages;
@@ -716,6 +725,7 @@ class ChatStore {
       
       const profile = data[0] as PublicProfile;
       this.profiles.set(userId, profile);
+      this.lastSyncTimes.profiles = new Date();
       
       return profile;
     } catch (err: any) {
@@ -750,6 +760,15 @@ class ChatStore {
 
   getCurrentUserId(): string | null {
     return this.currentUserId;
+  }
+
+  // Dev health banner utilities
+  getLastSyncTime(type: 'chats' | 'messages' | 'profiles'): Date | null {
+    return this.lastSyncTimes[type];
+  }
+
+  getCachedProfileCount(): number {
+    return this.profiles.size;
   }
 }
 
