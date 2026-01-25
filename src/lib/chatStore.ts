@@ -6,6 +6,18 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isAbortError = (err: unknown): boolean => {
+  const e = err as any;
+  const msg = String(e?.message ?? '');
+  return (
+    e?.name === 'AbortError' ||
+    msg.includes('aborted') ||
+    msg.includes('signal is aborted')
+  );
+};
+
 // =============================================
 // TYPES
 // =============================================
@@ -250,42 +262,56 @@ class ChatStore {
     if (!forceRefresh && this.messages.has(chatId)) {
       return this.messages.get(chatId)!;
     }
-    
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-      
-      if (error) {
-        // Silently ignore AbortError
-        if (error.message?.includes('aborted')) {
-          return this.messages.get(chatId) || [];
+
+    const cachedFallback = () => this.messages.get(chatId) || [];
+    const MAX_ABORT_RETRIES = 4;
+
+    for (let attempt = 1; attempt <= MAX_ABORT_RETRIES; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          // Retry AbortError a few times (often happens during auth client init/lock)
+          if (isAbortError(error)) {
+            if (attempt < MAX_ABORT_RETRIES) {
+              await sleep(200 * attempt);
+              continue;
+            }
+            return cachedFallback();
+          }
+
+          console.error('[ChatStore] Error loading messages:', error);
+          return cachedFallback();
         }
-        console.error('[ChatStore] Error loading messages:', error);
-        return this.messages.get(chatId) || [];
+
+        const messages: Message[] = (data || []).map((msg) => ({
+          ...msg,
+          message_type: msg.message_type as Message['message_type'],
+          status: msg.status as Message['status'],
+        }));
+
+        this.messages.set(chatId, messages);
+        this.lastSyncTimes.messages = new Date();
+        this.notifyMessageListeners(chatId);
+        return messages;
+      } catch (err: any) {
+        if (isAbortError(err)) {
+          if (attempt < MAX_ABORT_RETRIES) {
+            await sleep(200 * attempt);
+            continue;
+          }
+          return cachedFallback();
+        }
+        console.error('[ChatStore] Error loading messages:', err);
+        return cachedFallback();
       }
-      
-      const messages: Message[] = (data || []).map(msg => ({
-        ...msg,
-        message_type: msg.message_type as Message['message_type'],
-        status: msg.status as Message['status'],
-      }));
-      
-      this.messages.set(chatId, messages);
-      this.lastSyncTimes.messages = new Date();
-      this.notifyMessageListeners(chatId);
-      
-      return messages;
-    } catch (err: any) {
-      // Silently ignore AbortError
-      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
-        return this.messages.get(chatId) || [];
-      }
-      console.error('[ChatStore] Error loading messages:', err);
-      return this.messages.get(chatId) || [];
     }
+
+    return cachedFallback();
   }
 
   subscribeToMessages(chatId: string, callback: (messages: Message[]) => void): () => void {
