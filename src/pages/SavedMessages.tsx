@@ -4,66 +4,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageBubble } from "@/components/ui/message-bubble";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
-interface SavedMessage {
-  id: string;
-  text: string;
-  timestamp: string;
-  fromChat: string;
-  originalSender?: string;
-}
-
-const mockSavedMessages: SavedMessage[] = [
-  {
-    id: "1",
-    text: "Don't forget about the meeting tomorrow at 3 PM",
-    timestamp: "12:30",
-    fromChat: "Alex Johnson",
-    originalSender: "Alex Johnson"
-  },
-  {
-    id: "2",
-    text: "Here's the link to the project documentation: https://docs.example.com",
-    timestamp: "11:45",
-    fromChat: "Team Group",
-    originalSender: "Sarah Williams"
-  },
-  {
-    id: "3",
-    text: "Remember to buy groceries: milk, bread, eggs, and coffee",
-    timestamp: "Yesterday",
-    fromChat: "Personal Notes"
-  },
-  {
-    id: "4",
-    text: "Great quote: 'The best time to plant a tree was 20 years ago. The second best time is now.'",
-    timestamp: "Monday",
-    fromChat: "Inspiration Group",
-    originalSender: "John Smith"
-  }
-];
+// Note: Saved messages feature requires a dedicated database table
+// This is a UI-ready component that will work once the backend is added
 
 const SavedMessages = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
-  const filteredMessages = mockSavedMessages.filter(message =>
-    message.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    message.fromChat.toLowerCase().includes(searchQuery.toLowerCase())
+  // Placeholder - in full implementation, this would fetch from a saved_messages table
+  const savedMessages: any[] = [];
+
+  const filteredMessages = savedMessages.filter(message =>
+    message.text?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleShare = (message: SavedMessage) => {
+  const handleShare = (message: any) => {
     navigator.share?.({
       title: 'Shared from Zeshopp Chat',
       text: message.text
-    }) || alert('Copied to clipboard!');
+    }) || toast.info('Share feature not supported on this device');
   };
 
   const handleDelete = (messageId: string) => {
-    if (confirm('Remove this saved message?')) {
-      // Remove from saved messages
-      alert('Message removed from saved messages');
-    }
+    toast.info('Delete feature coming soon');
   };
 
   return (
@@ -95,51 +60,18 @@ const SavedMessages = () => {
         </div>
       </div>
 
-      {/* Saved Messages List */}
-      <div className="p-4 space-y-4">
-        {filteredMessages.map((message) => (
-          <div key={message.id} className="group">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-muted-foreground">
-                From: {message.fromChat}
-                {message.originalSender && ` • ${message.originalSender}`}
-              </div>
-              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => handleShare(message)}
-                >
-                  <Share className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(message.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <MessageBubble
-              message={message.text}
-              timestamp={message.timestamp}
-              isOwn={false}
-            />
-          </div>
-        ))}
-        
-        {filteredMessages.length === 0 && (
-          <div className="text-center py-8">
-            <Bookmark className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No saved messages found</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Long press on any message to save it here
-            </p>
-          </div>
-        )}
+      {/* Empty State */}
+      <div className="p-4">
+        <div className="text-center py-12">
+          <Bookmark className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-foreground mb-2">No saved messages</h2>
+          <p className="text-muted-foreground text-sm max-w-xs mx-auto">
+            Long press on any message in a chat to save it here for quick access later.
+          </p>
+          <p className="text-xs text-muted-foreground mt-4">
+            This feature is coming soon!
+          </p>
+        </div>
       </div>
     </div>
   );

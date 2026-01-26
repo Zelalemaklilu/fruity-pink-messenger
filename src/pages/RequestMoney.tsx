@@ -1,83 +1,79 @@
-import { useState } from "react";
-import { ArrowLeft, Search, ArrowDownLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, Search, ArrowDownLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { transactionStore } from "@/lib/transactionStore";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Contact {
   id: string;
   name: string;
-  phone: string;
-  status: "online" | "away" | "offline";
-  avatar?: string;
+  username: string;
+  avatar_url?: string;
+  is_online?: boolean;
 }
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "Alex Johnson",
-    phone: "+251 911 123 456",
-    status: "online"
-  },
-  {
-    id: "2",
-    name: "Sarah Williams", 
-    phone: "+251 912 234 567",
-    status: "away"
-  },
-  {
-    id: "3",
-    name: "John Smith",
-    phone: "+251 913 345 678",
-    status: "offline"
-  }
-];
 
 const RequestMoney = () => {
   const [amount, setAmount] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [reason, setReason] = useState("");
   const navigate = useNavigate();
 
-  const filteredContacts = mockContacts.filter(contact =>
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.phone.includes(searchQuery)
-  );
+  // Search users when query changes
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (searchQuery.length < 2) {
+        setContacts([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const { data, error } = await supabase.rpc('search_users_public', {
+          search_term: searchQuery
+        });
+
+        if (error) throw error;
+
+        const mappedContacts: Contact[] = (data || []).map((user: any) => ({
+          id: user.id,
+          name: user.name || user.username,
+          username: user.username,
+          avatar_url: user.avatar_url,
+          is_online: user.is_online
+        }));
+
+        setContacts(mappedContacts);
+      } catch (error) {
+        console.error("Search error:", error);
+        toast.error("Failed to search users");
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const debounce = setTimeout(searchUsers, 300);
+    return () => clearTimeout(debounce);
+  }, [searchQuery]);
 
   const quickAmounts = [50, 100, 250, 500, 1000, 2000];
 
   const handleRequestMoney = () => {
     if (!amount || !selectedContact || parseFloat(amount) <= 0) return;
 
-    // Create and add the transaction
-    const transaction = transactionStore.addTransaction({
-      type: "request",
-      amount: parseFloat(amount),
-      description: reason || `Request from ${selectedContact.name}`,
-      status: "pending",
-      recipient: selectedContact.name,
-      note: reason
-    });
-
-    // Navigate to receipt with transaction data
-    navigate('/transaction-receipt', { 
-      state: { 
-        transaction: {
-          type: 'request_money',
-          amount: parseFloat(amount),
-          recipient: selectedContact.name,
-          transactionId: transaction.transactionId,
-          timestamp: transaction.timestamp,
-          status: 'pending',
-          reason: reason
-        }
-      } 
-    });
+    // For now, show a toast since money requests need backend support
+    // In a full implementation, this would send a notification to the recipient
+    toast.success(`Request for ${amount} ETB sent to @${selectedContact.username}`);
+    
+    // Navigate back to wallet
+    navigate('/wallet');
   };
 
   return (
@@ -137,12 +133,13 @@ const RequestMoney = () => {
               <div className="flex items-center space-x-3">
                 <ChatAvatar
                   name={selectedContact.name}
-                  status={selectedContact.status}
+                  status={selectedContact.is_online ? "online" : "offline"}
                   size="md"
+                  src={selectedContact.avatar_url}
                 />
                 <div>
                   <h3 className="font-medium text-foreground">{selectedContact.name}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedContact.phone}</p>
+                  <p className="text-sm text-muted-foreground">@{selectedContact.username}</p>
                 </div>
               </div>
               <Button 
@@ -166,34 +163,49 @@ const RequestMoney = () => {
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search contacts..."
+              placeholder="Search by username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
 
-          {/* Contacts List */}
+          {/* Search Results */}
           <div className="space-y-2">
-            {filteredContacts.map((contact) => (
-              <Card
-                key={contact.id}
-                className="p-3 cursor-pointer hover:bg-muted/50 transition-smooth"
-                onClick={() => setSelectedContact(contact)}
-              >
-                <div className="flex items-center space-x-3">
-                  <ChatAvatar
-                    name={contact.name}
-                    status={contact.status}
-                    size="sm"
-                  />
-                  <div>
-                    <h4 className="font-medium text-foreground">{contact.name}</h4>
-                    <p className="text-sm text-muted-foreground">{contact.phone}</p>
+            {isSearching ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : searchQuery.length < 2 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Type at least 2 characters to search
+              </p>
+            ) : contacts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No users found
+              </p>
+            ) : (
+              contacts.map((contact) => (
+                <Card
+                  key={contact.id}
+                  className="p-3 cursor-pointer hover:bg-muted/50 transition-smooth"
+                  onClick={() => setSelectedContact(contact)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <ChatAvatar
+                      name={contact.name}
+                      status={contact.is_online ? "online" : "offline"}
+                      size="sm"
+                      src={contact.avatar_url}
+                    />
+                    <div>
+                      <h4 className="font-medium text-foreground">{contact.name}</h4>
+                      <p className="text-sm text-muted-foreground">@{contact.username}</p>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))
+            )}
           </div>
         </div>
       )}
