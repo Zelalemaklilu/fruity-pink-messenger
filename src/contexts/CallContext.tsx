@@ -27,7 +27,7 @@ interface CallContextType {
   resetCall: () => void;
 }
 
-const CallContext = createContext<CallContextType | null>(null);
+export const CallContext = createContext<CallContextType | null>(null);
 
 export const useCall = (): CallContextType => {
   const context = useContext(CallContext);
