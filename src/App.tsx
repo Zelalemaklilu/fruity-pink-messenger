@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
@@ -28,20 +28,18 @@ import TransactionDetail from "./pages/TransactionDetail";
 import AddAccount from "./pages/AddAccount";
 import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
-import { supabase } from "@/integrations/supabase/client";
 import { updateOnlineStatus } from "@/lib/supabaseService";
 import logoImage from "@/assets/zeshopp-logo.jpg";
-import type { User } from "@supabase/supabase-js";
 import { CallProvider } from "@/contexts/CallContext";
 import { CallOverlay } from "@/components/call/CallOverlay";
 import { DevHealthBanner } from "@/components/dev/DevHealthBanner";
-import { getSessionUserSafe } from "@/lib/authSession";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { chatStore } from "@/lib/chatStore";
 
 const queryClient = new QueryClient();
 
 const AppRoutes = () => {
-  const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
-  const [user, setUser] = useState<User | null>(null);
+  const { authState, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -50,51 +48,25 @@ const AppRoutes = () => {
 
   const isAuthenticated = authState === 'authenticated';
 
-  // Auth state subscription
+  // Initialize chat store from the single, already-restored auth state
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log("[Auth] State change:", event, session?.user?.id);
-        
-        if (session?.user) {
-          setUser(session.user);
-          setAuthState('authenticated');
-          
-          // Update online status (non-blocking)
-          updateOnlineStatus(session.user.id, true).catch(console.warn);
-        } else {
-          setUser(null);
-          setAuthState('unauthenticated');
-          loginToastShownRef.current = false;
-          redirectToChatsDoneRef.current = false;
-        }
-      }
-    );
+    if (user?.id) {
+      chatStore.initialize(user.id).catch((err) => {
+        console.error("[ChatStore] initialize failed:", err);
+      });
+    } else {
+      chatStore.cleanup();
+    }
+  }, [user?.id]);
 
-    // THEN check existing session (deduped to avoid auth-client lock AbortError)
-    getSessionUserSafe().then(({ session, user }) => {
-      const u = session?.user ?? user;
-      if (u) {
-        setUser(u);
-        setAuthState('authenticated');
-        updateOnlineStatus(u.id, true).catch(console.warn);
-      } else {
-        setAuthState('unauthenticated');
-      }
-    }).catch((err) => {
-      console.warn('[Auth] Initial session restore failed:', err);
-      setAuthState('unauthenticated');
-    });
-
-    // Cleanup: set offline on unmount
+  // Online status (non-blocking)
+  useEffect(() => {
+    if (!user?.id) return;
+    updateOnlineStatus(user.id, true).catch(console.warn);
     return () => {
-      subscription.unsubscribe();
-      if (user?.id) {
-        updateOnlineStatus(user.id, false).catch(console.warn);
-      }
+      updateOnlineStatus(user.id, false).catch(console.warn);
     };
-  }, []);
+  }, [user?.id]);
 
   // Post-login toast & redirect
   useEffect(() => {
@@ -160,64 +132,64 @@ const AppRoutes = () => {
         isAuthenticated ? <Navigate to="/chats" replace /> : <ForgotPassword />
       } />
       <Route path="/chats" element={
-        isAuthenticated ? <Chats /> : <Navigate to="/" replace />
+        isAuthenticated ? <Chats /> : <Navigate to="/auth" replace />
       } />
       <Route path="/chat" element={
         isAuthenticated ? <Navigate to="/chats" replace /> : <Navigate to="/" replace />
       } />
       <Route path="/chat/:chatId" element={
-        isAuthenticated ? <Chat /> : <Navigate to="/" replace />
+        isAuthenticated ? <Chat /> : <Navigate to="/auth" replace />
       } />
       <Route path="/profile" element={
-        isAuthenticated ? <Profile /> : <Navigate to="/" replace />
+        isAuthenticated ? <Profile /> : <Navigate to="/auth" replace />
       } />
       <Route path="/settings" element={
-        isAuthenticated ? <Settings /> : <Navigate to="/" replace />
+        isAuthenticated ? <Settings /> : <Navigate to="/auth" replace />
       } />
       <Route path="/contacts" element={
-        isAuthenticated ? <Contacts /> : <Navigate to="/" replace />
+        isAuthenticated ? <Contacts /> : <Navigate to="/auth" replace />
       } />
       <Route path="/calls" element={
-        isAuthenticated ? <Calls /> : <Navigate to="/" replace />
+        isAuthenticated ? <Calls /> : <Navigate to="/auth" replace />
       } />
       <Route path="/saved-messages" element={
-        isAuthenticated ? <SavedMessages /> : <Navigate to="/" replace />
+        isAuthenticated ? <SavedMessages /> : <Navigate to="/auth" replace />
       } />
       <Route path="/new-group" element={
-        isAuthenticated ? <NewGroup /> : <Navigate to="/" replace />
+        isAuthenticated ? <NewGroup /> : <Navigate to="/auth" replace />
       } />
       <Route path="/new-message" element={
-        isAuthenticated ? <NewMessage /> : <Navigate to="/" replace />
+        isAuthenticated ? <NewMessage /> : <Navigate to="/auth" replace />
       } />
       <Route path="/new-contact" element={
-        isAuthenticated ? <NewContact /> : <Navigate to="/" replace />
+        isAuthenticated ? <NewContact /> : <Navigate to="/auth" replace />
       } />
       <Route path="/wallet" element={
-        isAuthenticated ? <Wallet /> : <Navigate to="/" replace />
+        isAuthenticated ? <Wallet /> : <Navigate to="/auth" replace />
       } />
       <Route path="/features" element={
-        isAuthenticated ? <Features /> : <Navigate to="/" replace />
+        isAuthenticated ? <Features /> : <Navigate to="/auth" replace />
       } />
       <Route path="/add-money" element={
-        isAuthenticated ? <AddMoney /> : <Navigate to="/" replace />
+        isAuthenticated ? <AddMoney /> : <Navigate to="/auth" replace />
       } />
       <Route path="/send-money" element={
-        isAuthenticated ? <SendMoney /> : <Navigate to="/" replace />
+        isAuthenticated ? <SendMoney /> : <Navigate to="/auth" replace />
       } />
       <Route path="/request-money" element={
-        isAuthenticated ? <RequestMoney /> : <Navigate to="/" replace />
+        isAuthenticated ? <RequestMoney /> : <Navigate to="/auth" replace />
       } />
       <Route path="/transaction-history" element={
-        isAuthenticated ? <TransactionHistory /> : <Navigate to="/" replace />
+        isAuthenticated ? <TransactionHistory /> : <Navigate to="/auth" replace />
       } />
       <Route path="/transaction-receipt" element={
-        isAuthenticated ? <TransactionReceipt /> : <Navigate to="/" replace />
+        isAuthenticated ? <TransactionReceipt /> : <Navigate to="/auth" replace />
       } />
       <Route path="/transaction-detail/:transactionId" element={
-        isAuthenticated ? <TransactionDetail /> : <Navigate to="/" replace />
+        isAuthenticated ? <TransactionDetail /> : <Navigate to="/auth" replace />
       } />
       <Route path="/add-account" element={
-        isAuthenticated ? <AddAccount /> : <Navigate to="/" replace />
+        isAuthenticated ? <AddAccount /> : <Navigate to="/auth" replace />
       } />
       <Route path="*" element={<NotFound />} />
     </Routes>
@@ -232,11 +204,13 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <CallProvider>
-              <AppRoutes />
-              <CallOverlay />
-              <DevHealthBanner />
-            </CallProvider>
+            <AuthProvider>
+              <CallProvider>
+                <AppRoutes />
+                <CallOverlay />
+                <DevHealthBanner />
+              </CallProvider>
+            </AuthProvider>
           </BrowserRouter>
         </div>
       </TooltipProvider>

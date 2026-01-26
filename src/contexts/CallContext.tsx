@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { useCallManager, CallState, ActiveCall } from '@/hooks/useCallManager';
 import { CallType } from '@/hooks/useWebRTC';
 import { supabase } from '@/integrations/supabase/client';
-import { getSessionUserSafe } from '@/lib/authSession';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CallContextType {
   // State
@@ -42,62 +42,52 @@ interface CallProviderProps {
 }
 
 export const CallProvider: React.FC<CallProviderProps> = ({ children }) => {
+  const { user } = useAuth();
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('User');
   const [userAvatar, setUserAvatar] = useState<string | undefined>();
   const [isReady, setIsReady] = useState(false);
 
-  // Load current user
+  // Load current user from the single AuthProvider source (no extra auth subscriptions)
   useEffect(() => {
-    const loadUser = async () => {
-      const { user } = await getSessionUserSafe();
-      if (user) {
-        setUserId(user.id);
-        
-        // Get user profile
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      if (!user?.id) {
+        setUserId(null);
+        setUserName('User');
+        setUserAvatar(undefined);
+        setIsReady(false);
+        return;
+      }
+
+      setUserId(user.id);
+
+      try {
         const { data: profile } = await supabase
           .from('profiles')
           .select('name, avatar_url')
           .eq('id', user.id)
           .maybeSingle();
 
+        if (cancelled) return;
+
         if (profile) {
           setUserName(profile.name || 'User');
           setUserAvatar(profile.avatar_url || undefined);
         }
-        
-        setIsReady(true);
+      } catch (e) {
+        if (!cancelled) console.warn('[CallProvider] Failed to load profile:', e);
+      } finally {
+        if (!cancelled) setIsReady(true);
       }
     };
 
-    loadUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        setUserId(session.user.id);
-        
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('name, avatar_url')
-          .eq('id', session.user.id)
-          .single();
-
-        if (profile) {
-          setUserName(profile.name || 'User');
-          setUserAvatar(profile.avatar_url || undefined);
-        }
-        
-        setIsReady(true);
-      } else {
-        setUserId(null);
-        setIsReady(false);
-      }
-    });
-
+    loadProfile();
     return () => {
-      subscription.unsubscribe();
+      cancelled = true;
     };
-  }, []);
+  }, [user?.id]);
 
   const callManager = useCallManager({
     userId,

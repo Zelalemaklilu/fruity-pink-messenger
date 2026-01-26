@@ -3,13 +3,11 @@
  * Shows auth status + last sync times for chats/messages/profiles
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Activity, User, MessageSquare, Users, Database } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useChatStoreInit } from '@/hooks/useChatStore';
 import { chatStore } from '@/lib/chatStore';
 import { cn } from '@/lib/utils';
-import { getSessionUserSafe } from '@/lib/authSession';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Only show in development
 const IS_DEV = import.meta.env.DEV;
@@ -32,41 +30,17 @@ const formatTime = (date: Date | null): string => {
 };
 
 export function DevHealthBanner() {
+  const { authState, user } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
-  const [userId, setUserId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ chats: null, messages: null, profiles: null });
   const [, forceUpdate] = useState({});
-  
-  const { isReady } = useChatStoreInit();
 
-  // Check auth status
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { user } = await getSessionUserSafe();
-      if (user) {
-        setAuthStatus('authenticated');
-        setUserId(user.id);
-      } else {
-        setAuthStatus('unauthenticated');
-        setUserId(null);
-      }
-    };
-    
-    checkAuth();
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (session?.user) {
-        setAuthStatus('authenticated');
-        setUserId(session.user.id);
-      } else {
-        setAuthStatus('unauthenticated');
-        setUserId(null);
-      }
-    });
-    
-    return () => subscription.unsubscribe();
-  }, []);
+  const authStatus = useMemo(() => {
+    if (authState === 'loading') return 'checking' as const;
+    return user ? ('authenticated' as const) : ('unauthenticated' as const);
+  }, [authState, user]);
+
+  const userId = user?.id ?? null;
 
   // Track sync status from chatStore
   useEffect(() => {
@@ -88,7 +62,7 @@ export function DevHealthBanner() {
     }, 2000);
     
     return () => clearInterval(interval);
-  }, [isReady]);
+  }, []);
 
   // Don't render in production
   if (!IS_DEV) return null;
@@ -96,7 +70,7 @@ export function DevHealthBanner() {
   const authColor = authStatus === 'authenticated' ? 'text-green-400' : 
                     authStatus === 'unauthenticated' ? 'text-red-400' : 'text-yellow-400';
   
-  const storeReady = isReady;
+  const storeReady = !!userId && chatStore.getCurrentUserId() === userId;
   const storeColor = storeReady ? 'text-green-400' : 'text-yellow-400';
 
   return (
