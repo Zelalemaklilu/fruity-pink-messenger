@@ -38,59 +38,63 @@ const isAbortError = (err: unknown): boolean => {
   );
 };
 
-const initializeStore = async (): Promise<void> => {
-  if (globalIsReady) return;
+const initializeStore = async (userId: string): Promise<void> => {
+  if (globalIsReady && globalUserId === userId) return;
+
+  globalUserId = userId;
+  console.log('[useChatStore] Starting initialization for user:', userId);
 
   const startedAt = Date.now();
+  let attemptCount = 0;
 
   while (!globalIsReady && (Date.now() - startedAt) < INIT_MAX_WAIT_MS) {
+    attemptCount++;
+    
     try {
-      // Use deduplicated auth helper to avoid lock contention / AbortError
-      const { user } = await getSessionUserSafe({ maxAgeMs: 0, maxAbortRetries: 3 });
+      // Wait a bit before first attempt to let auth settle
+      if (attemptCount === 1) {
+        await sleep(300);
+      }
 
-      if (user) {
-        if (user.id !== globalUserId) {
-          globalUserId = user.id;
-        }
+      console.log(`[useChatStore] Init attempt ${attemptCount}`);
 
-        // initialize() returns boolean indicating success
-        const success = await chatStore.initialize(user.id);
-        
-        if (success) {
-          globalIsReady = true;
-          notifyReadyListeners();
-          return;
-        } else {
-          // loadChats failed - wait and retry
-          console.warn('[useChatStore] initialize returned false, retrying...');
-          await sleep(INIT_RETRY_INTERVAL_MS);
-          continue;
-        }
+      // initialize() returns boolean indicating success
+      const success = await chatStore.initialize(userId);
+      
+      if (success) {
+        console.log('[useChatStore] Initialization successful!');
+        globalIsReady = true;
+        notifyReadyListeners();
+        return;
+      } else {
+        // loadChats failed - wait and retry with exponential backoff
+        console.warn('[useChatStore] initialize returned false, retrying...');
+        await sleep(Math.min(INIT_RETRY_INTERVAL_MS * attemptCount, 2000));
+        continue;
       }
     } catch (error: unknown) {
       // Retry on AbortError - happens during rapid navigation / token refresh
       if (isAbortError(error)) {
-        await sleep(INIT_RETRY_INTERVAL_MS);
+        console.warn('[useChatStore] AbortError during init, retrying...');
+        await sleep(Math.min(INIT_RETRY_INTERVAL_MS * attemptCount, 2000));
         continue;
       }
       console.error('[useChatStore] Init error:', error);
     }
 
-    // No user yet (race immediately after login). Wait and retry.
     await sleep(INIT_RETRY_INTERVAL_MS);
   }
 
-  // Timed out - still mark as ready so UI doesn't stay stuck on spinner forever
-  // User can manually refresh or the Chats page will trigger a retry
+  // Timed out - mark as ready with empty data so UI unblocks
   console.warn('[useChatStore] Init timed out after', INIT_MAX_WAIT_MS, 'ms');
-  if (globalUserId) {
-    globalIsReady = true;
-  }
+  globalIsReady = true;
   notifyReadyListeners();
 };
 
-// Subscribe to auth changes globally
+// Subscribe to auth changes globally - triggered AFTER auth operations complete
 supabase.auth.onAuthStateChange((event, session) => {
+  console.log('[useChatStore] Auth state change:', event);
+  
   if (event === 'SIGNED_OUT') {
     globalUserId = null;
     globalIsReady = false;
@@ -98,12 +102,20 @@ supabase.auth.onAuthStateChange((event, session) => {
     globalInitPromise = null;
     chatStore.cleanup();
     notifyReadyListeners();
-  } else if (session?.user) {
-    // Always kick init on sign-in/refresh; it is idempotent and handles retries.
-    globalUserId = session.user.id;
+  } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+    // Only reinitialize if user changed or we're not ready
+    const isSameUser = globalUserId === session.user.id;
+    if (isSameUser && globalIsReady) {
+      console.log('[useChatStore] Same user already ready, skipping reinit');
+      return;
+    }
+    
+    // Reset state for new init
     globalIsReady = false;
     initStarted = true;
-    globalInitPromise = initializeStore();
+    
+    // Small delay to let auth client fully settle before making DB queries
+    globalInitPromise = sleep(500).then(() => initializeStore(session.user.id));
   }
 });
 
@@ -121,8 +133,20 @@ export function useChatStoreInit(): { isReady: boolean; userId: string | null } 
     // Ensure initialization starts (and can be retried if a prior attempt timed out)
     if (!globalInitPromise && !globalIsReady) {
       initStarted = true;
-      globalInitPromise = initializeStore().finally(() => {
-        // Allow future retries if we still didn't become ready (e.g. session arrived late)
+      globalInitPromise = (async () => {
+        try {
+          // Get current user from session
+          const { user } = await getSessionUserSafe({ maxAgeMs: 0, maxAbortRetries: 5 });
+          if (user) {
+            await initializeStore(user.id);
+          } else {
+            console.log('[useChatStoreInit] No user session found');
+          }
+        } catch (err) {
+          console.error('[useChatStoreInit] Failed to get session:', err);
+        }
+      })().finally(() => {
+        // Allow future retries if we still didn't become ready
         if (!globalIsReady) {
           initStarted = false;
           globalInitPromise = null;
