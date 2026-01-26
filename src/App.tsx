@@ -35,6 +35,7 @@ import type { User } from "@supabase/supabase-js";
 import { CallProvider } from "@/contexts/CallContext";
 import { CallOverlay } from "@/components/call/CallOverlay";
 import { DevHealthBanner } from "@/components/dev/DevHealthBanner";
+import { getSessionUserSafe } from "@/lib/authSession";
 
 const queryClient = new QueryClient();
 
@@ -71,15 +72,19 @@ const AppRoutes = () => {
       }
     );
 
-    // THEN check existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
+    // THEN check existing session (deduped to avoid auth-client lock AbortError)
+    getSessionUserSafe({ maxAgeMs: 0 }).then(({ session, user }) => {
+      const u = session?.user ?? user;
+      if (u) {
+        setUser(u);
         setAuthState('authenticated');
-        updateOnlineStatus(session.user.id, true).catch(console.warn);
+        updateOnlineStatus(u.id, true).catch(console.warn);
       } else {
         setAuthState('unauthenticated');
       }
+    }).catch((err) => {
+      console.warn('[Auth] Initial session restore failed:', err);
+      setAuthState('unauthenticated');
     });
 
     // Cleanup: set offline on unmount
