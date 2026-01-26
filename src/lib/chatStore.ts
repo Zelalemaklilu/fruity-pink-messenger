@@ -159,35 +159,49 @@ class ChatStore {
 
   private async loadChats(): Promise<void> {
     if (!this.currentUserId) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('chats')
-        .select('*')
-        .or(`participant_1.eq.${this.currentUserId},participant_2.eq.${this.currentUserId}`)
-        .order('last_message_time', { ascending: false, nullsFirst: false });
-      
-      if (error) {
-        // IMPORTANT: if this was aborted, bubble it up so the init layer can retry
-        if (error.message?.includes('aborted')) {
-          const err = Object.assign(new Error('AbortError: query aborted'), { name: 'AbortError' });
-          throw err;
+
+    const MAX_ABORT_RETRIES = 4;
+
+    for (let attempt = 1; attempt <= MAX_ABORT_RETRIES; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from('chats')
+          .select('*')
+          .or(`participant_1.eq.${this.currentUserId},participant_2.eq.${this.currentUserId}`)
+          .order('last_message_time', { ascending: false, nullsFirst: false });
+
+        if (error) {
+          // Retry AbortError a few times
+          if (isAbortError(error)) {
+            if (attempt < MAX_ABORT_RETRIES) {
+              await sleep(200 * attempt);
+              continue;
+            }
+            console.warn('[ChatStore] loadChats exhausted retries on AbortError');
+            return; // Fallback silently - UI will work with empty cache
+          }
+          console.error('[ChatStore] Error loading chats:', error);
+          return;
         }
-        console.error('[ChatStore] Error loading chats:', error);
+
+        // Success - update cache
+        this.chats.clear();
+        (data || []).forEach((chat) => this.chats.set(chat.id, chat));
+        this.lastSyncTimes.chats = new Date();
+        this.notifyChatListeners();
+        return;
+      } catch (err: unknown) {
+        if (isAbortError(err)) {
+          if (attempt < MAX_ABORT_RETRIES) {
+            await sleep(200 * attempt);
+            continue;
+          }
+          console.warn('[ChatStore] loadChats exhausted retries on thrown AbortError');
+          return;
+        }
+        console.error('[ChatStore] Error loading chats:', err);
         return;
       }
-      
-      // Update cache
-      this.chats.clear();
-      (data || []).forEach(chat => this.chats.set(chat.id, chat));
-      this.lastSyncTimes.chats = new Date();
-      
-      // Notify listeners
-      this.notifyChatListeners();
-    } catch (err: any) {
-      // IMPORTANT: if this was aborted, bubble it up so the init layer can retry
-      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) throw err;
-      console.error('[ChatStore] Error loading chats:', err);
     }
   }
 

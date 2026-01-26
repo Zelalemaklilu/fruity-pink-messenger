@@ -27,6 +27,16 @@ const notifyReadyListeners = () => {
   readyListeners.forEach(listener => listener());
 };
 
+const isAbortError = (err: unknown): boolean => {
+  const e = err as any;
+  const msg = String(e?.message ?? '');
+  return (
+    e?.name === 'AbortError' ||
+    msg.includes('aborted') ||
+    msg.includes('signal is aborted')
+  );
+};
+
 const initializeStore = async (): Promise<void> => {
   if (globalIsReady) return;
 
@@ -35,26 +45,46 @@ const initializeStore = async (): Promise<void> => {
   while (!globalIsReady && (Date.now() - startedAt) < INIT_MAX_WAIT_MS) {
     try {
       // Prefer session (fast + reliable after SIGNED_IN). Fallback to getUser.
-      const { data: { session } } = await supabase.auth.getSession();
-      const sessionUser = session?.user;
-      const { data: { user: directUser } } = sessionUser ? { data: { user: sessionUser } } : await supabase.auth.getUser();
-      const user = directUser;
+      let user = null;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        user = session?.user ?? null;
+      } catch (authErr) {
+        if (isAbortError(authErr)) {
+          await sleep(INIT_RETRY_INTERVAL_MS);
+          continue;
+        }
+        console.warn('[useChatStore] getSession failed:', authErr);
+      }
+
+      if (!user) {
+        try {
+          const { data: { user: directUser } } = await supabase.auth.getUser();
+          user = directUser;
+        } catch (authErr) {
+          if (isAbortError(authErr)) {
+            await sleep(INIT_RETRY_INTERVAL_MS);
+            continue;
+          }
+          console.warn('[useChatStore] getUser failed:', authErr);
+        }
+      }
 
       if (user) {
         if (user.id !== globalUserId) {
           globalUserId = user.id;
         }
 
-        // initialize() may throw AbortError (we want to retry)
+        // initialize() now handles its own AbortError retries and won't throw
         await chatStore.initialize(user.id);
 
         globalIsReady = true;
         notifyReadyListeners();
         return;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Retry on AbortError - happens during rapid navigation / token refresh
-      if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      if (isAbortError(error)) {
         await sleep(INIT_RETRY_INTERVAL_MS);
         continue;
       }
@@ -65,7 +95,13 @@ const initializeStore = async (): Promise<void> => {
     await sleep(INIT_RETRY_INTERVAL_MS);
   }
 
-  // Timed out. Keep not-ready, but wake listeners so UIs can drop spinners.
+  // Timed out - still mark as ready so UI doesn't stay stuck on spinner forever
+  // but with empty data (user can refresh or sign in)
+  if (globalUserId) {
+    // We have a userId, meaning auth succeeded but loadChats may have failed
+    // Still mark ready to unblock UI
+    globalIsReady = true;
+  }
   notifyReadyListeners();
 };
 
