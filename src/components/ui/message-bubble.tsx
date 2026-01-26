@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, Trash2, MoreVertical, Download, FileIcon, Image as ImageIcon } from "lucide-react";
+import { Check, CheckCheck, Trash2, MoreVertical, Download, FileIcon, Image as ImageIcon, Bookmark, BookmarkCheck } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +18,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { saveMessage, unsaveMessage, isMessageSaved } from "@/lib/savedMessagesService";
+import { toast } from "sonner";
 
 interface MessageBubbleProps {
   message: string;
@@ -29,6 +32,8 @@ interface MessageBubbleProps {
   fileName?: string;
   onDelete?: () => void;
   className?: string;
+  messageId?: string;
+  chatId?: string;
 }
 
 export function MessageBubble({ 
@@ -40,14 +45,55 @@ export function MessageBubble({
   mediaUrl,
   fileName,
   onDelete,
-  className 
+  className,
+  messageId,
+  chatId,
 }: MessageBubbleProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [savingState, setSavingState] = useState<'idle' | 'saving' | 'unsaving'>('idle');
+
+  // Check if message is saved
+  useEffect(() => {
+    if (messageId) {
+      isMessageSaved(messageId).then(setIsSaved);
+    }
+  }, [messageId]);
 
   const handleDelete = () => {
     setShowDeleteDialog(false);
     onDelete?.();
+  };
+
+  const handleSave = async () => {
+    if (!messageId || !chatId) return;
+    
+    setSavingState('saving');
+    const success = await saveMessage(messageId, chatId);
+    setSavingState('idle');
+    
+    if (success) {
+      setIsSaved(true);
+      toast.success('Message saved');
+    } else {
+      toast.error('Failed to save message');
+    }
+  };
+
+  const handleUnsave = async () => {
+    if (!messageId) return;
+    
+    setSavingState('unsaving');
+    const success = await unsaveMessage(messageId);
+    setSavingState('idle');
+    
+    if (success) {
+      setIsSaved(false);
+      toast.success('Message unsaved');
+    } else {
+      toast.error('Failed to unsave message');
+    }
   };
 
   const renderContent = () => {
@@ -100,6 +146,8 @@ export function MessageBubble({
     }
   };
 
+  const showMenu = onDelete || messageId;
+
   return (
     <>
       <div className={cn(
@@ -107,8 +155,8 @@ export function MessageBubble({
         isOwn ? "justify-end" : "justify-start",
         className
       )}>
-        {/* Delete button for own messages */}
-        {isOwn && onDelete && (
+        {/* Menu for own messages */}
+        {isOwn && showMenu && (
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center mr-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -117,13 +165,37 @@ export function MessageBubble({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem 
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete message
-                </DropdownMenuItem>
+                {messageId && (
+                  <>
+                    {isSaved ? (
+                      <DropdownMenuItem 
+                        onClick={handleUnsave}
+                        disabled={savingState !== 'idle'}
+                      >
+                        <BookmarkCheck className="h-4 w-4 mr-2 text-primary" />
+                        Unsave
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem 
+                        onClick={handleSave}
+                        disabled={savingState !== 'idle'}
+                      >
+                        <Bookmark className="h-4 w-4 mr-2" />
+                        Save message
+                      </DropdownMenuItem>
+                    )}
+                    {onDelete && <DropdownMenuSeparator />}
+                  </>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem 
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete message
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -137,6 +209,7 @@ export function MessageBubble({
         )}>
           {renderContent()}
           <div className="flex items-center justify-end gap-1 mt-1">
+            {isSaved && <Bookmark className="h-3 w-3 text-primary" />}
             <span className="text-xs opacity-70">{timestamp}</span>
             {isOwn && status && (
               <div className="flex items-center">
@@ -147,6 +220,38 @@ export function MessageBubble({
             )}
           </div>
         </div>
+
+        {/* Menu for received messages (save only) */}
+        {!isOwn && messageId && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center ml-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {isSaved ? (
+                  <DropdownMenuItem 
+                    onClick={handleUnsave}
+                    disabled={savingState !== 'idle'}
+                  >
+                    <BookmarkCheck className="h-4 w-4 mr-2 text-primary" />
+                    Unsave
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem 
+                    onClick={handleSave}
+                    disabled={savingState !== 'idle'}
+                  >
+                    <Bookmark className="h-4 w-4 mr-2" />
+                    Save message
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

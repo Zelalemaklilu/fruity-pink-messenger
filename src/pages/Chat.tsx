@@ -384,6 +384,8 @@ const Chat = () => {
                   fileName={message.fileName}
                   onDelete={message.isOwn && !message.isOptimistic ? () => handleDeleteMessage(message.id) : undefined}
                   className={message.isFailed ? "opacity-50" : ""}
+                  messageId={!message.isOptimistic ? message.id : undefined}
+                  chatId={chatId}
                 />
               </div>
             )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, MoreVertical, Plus, Loader2 } from "lucide-react";
+import { Search, MoreVertical, Plus, Loader2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useChatList, useProfile } from "@/hooks/useChatStore";
 import { chatStore, Chat, PublicProfile } from "@/lib/chatStore";
 import { searchByUsername, findOrCreateChat } from "@/lib/supabaseService";
+import { getMyGroups, GroupWithLastMessage } from "@/lib/groupService";
 import { toast } from "sonner";
 
 // =============================================
@@ -69,6 +70,51 @@ const ChatItem = ({ chat, onClick }: ChatItemProps) => {
 };
 
 // =============================================
+// GROUP ITEM COMPONENT
+// =============================================
+
+interface GroupItemProps {
+  group: GroupWithLastMessage;
+  onClick: () => void;
+}
+
+const GroupItem = ({ group, onClick }: GroupItemProps) => {
+  const timestamp = formatTimestamp(group.last_message_time);
+  
+  return (
+    <div
+      onClick={onClick}
+      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-smooth active:bg-muted/70"
+    >
+      <div className="relative">
+        <ChatAvatar
+          name={group.name}
+          src={group.avatar_url || undefined}
+          size="md"
+        />
+        <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-0.5">
+          <Users className="h-3 w-3 text-primary-foreground" />
+        </div>
+      </div>
+      
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-foreground truncate">
+            {group.name}
+          </h3>
+          <span className="text-xs text-muted-foreground">
+            {timestamp}
+          </span>
+        </div>
+        <p className="text-sm text-muted-foreground truncate mt-0.5">
+          {group.last_message || `${group.member_count} members`}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// =============================================
 // UTILITIES
 // =============================================
 
@@ -88,6 +134,11 @@ const formatTimestamp = (timestamp?: string | null): string => {
   return date.toLocaleDateString();
 };
 
+// Combined item type for sorting
+type ConversationItem = 
+  | { type: 'chat'; data: Chat; time: number }
+  | { type: 'group'; data: GroupWithLastMessage; time: number };
+
 // =============================================
 // MAIN COMPONENT
 // =============================================
@@ -95,18 +146,59 @@ const formatTimestamp = (timestamp?: string | null): string => {
 const Chats = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [groups, setGroups] = useState<GroupWithLastMessage[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(true);
   const navigate = useNavigate();
   
   // Use the cached chat store
   const { chats, loading, totalUnread } = useChatList();
   const currentUserId = chatStore.getCurrentUserId();
 
-  // Filter chats locally (instant)
-  const filteredChats = chats.filter(chat => {
+  // Load groups
+  useEffect(() => {
+    const loadGroups = async () => {
+      setLoadingGroups(true);
+      try {
+        const myGroups = await getMyGroups();
+        setGroups(myGroups);
+      } catch (error) {
+        console.error('Error loading groups:', error);
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+
+    if (currentUserId) {
+      loadGroups();
+    }
+  }, [currentUserId]);
+
+  // Combine and sort chats and groups
+  const conversations: ConversationItem[] = [
+    ...chats.map(chat => ({
+      type: 'chat' as const,
+      data: chat,
+      time: chat.last_message_time ? new Date(chat.last_message_time).getTime() : 0,
+    })),
+    ...groups.map(group => ({
+      type: 'group' as const,
+      data: group,
+      time: group.last_message_time ? new Date(group.last_message_time).getTime() : 0,
+    })),
+  ].sort((a, b) => b.time - a.time);
+
+  // Filter conversations locally
+  const filteredConversations = conversations.filter(item => {
     if (!searchQuery) return true;
-    const profile = chatStore.getCachedProfile(chatStore.getOtherUserId(chat));
-    const name = profile?.name?.toLowerCase() || profile?.username?.toLowerCase() || "";
-    return name.includes(searchQuery.toLowerCase());
+    const query = searchQuery.toLowerCase();
+    
+    if (item.type === 'chat') {
+      const profile = chatStore.getCachedProfile(chatStore.getOtherUserId(item.data));
+      const name = profile?.name?.toLowerCase() || profile?.username?.toLowerCase() || "";
+      return name.includes(query);
+    } else {
+      return item.data.name.toLowerCase().includes(query);
+    }
   });
 
   // Handle username search
@@ -158,6 +250,12 @@ const Chats = () => {
     navigate(`/chat/${chatId}`);
   };
 
+  const handleGroupClick = (groupId: string) => {
+    navigate(`/group/${groupId}`);
+  };
+
+  const isLoading = loading || loadingGroups;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -206,13 +304,13 @@ const Chats = () => {
       </div>
 
       {/* Chat List - show immediately from cache, loading only when truly empty */}
-      {chats.length === 0 && loading ? (
+      {conversations.length === 0 && isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       ) : (
         <div className="divide-y divide-border">
-          {filteredChats.length === 0 ? (
+          {filteredConversations.length === 0 ? (
             <div className="text-center py-12 px-4">
               <p className="text-muted-foreground">
                 {searchQuery ? "No chats found" : "No chats yet"}
@@ -222,13 +320,21 @@ const Chats = () => {
               </p>
             </div>
           ) : (
-            filteredChats.map((chat) => (
-              <ChatItem
-                key={chat.id}
-                chat={chat}
-                onClick={() => handleChatClick(chat.id)}
-              />
-            ))
+            filteredConversations.map((item) => 
+              item.type === 'chat' ? (
+                <ChatItem
+                  key={`chat-${item.data.id}`}
+                  chat={item.data}
+                  onClick={() => handleChatClick(item.data.id)}
+                />
+              ) : (
+                <GroupItem
+                  key={`group-${item.data.id}`}
+                  group={item.data}
+                  onClick={() => handleGroupClick(item.data.id)}
+                />
+              )
+            )
           )}
         </div>
       )}

@@ -114,6 +114,112 @@ export type Database = {
           },
         ]
       }
+      group_members: {
+        Row: {
+          group_id: string
+          id: string
+          joined_at: string
+          role: Database["public"]["Enums"]["group_role"]
+          user_id: string
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          joined_at?: string
+          role?: Database["public"]["Enums"]["group_role"]
+          user_id: string
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          joined_at?: string
+          role?: Database["public"]["Enums"]["group_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_messages: {
+        Row: {
+          content: string | null
+          created_at: string
+          file_name: string | null
+          group_id: string
+          id: string
+          media_url: string | null
+          message_type: string | null
+          sender_id: string
+          updated_at: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          file_name?: string | null
+          group_id: string
+          id?: string
+          media_url?: string | null
+          message_type?: string | null
+          sender_id: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          file_name?: string | null
+          group_id?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string | null
+          sender_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_messages_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           chat_id: string
@@ -255,6 +361,48 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      saved_messages: {
+        Row: {
+          chat_id: string
+          id: string
+          message_id: string
+          note: string | null
+          saved_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          id?: string
+          message_id: string
+          note?: string | null
+          saved_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          id?: string
+          message_id?: string
+          note?: string | null
+          saved_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_messages_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_messages_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       typing_indicators: {
         Row: {
@@ -461,6 +609,14 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: boolean
       }
+      is_group_admin: {
+        Args: { p_group_id: string; p_user_id?: string }
+        Returns: boolean
+      }
+      is_group_member: {
+        Args: { p_group_id: string; p_user_id?: string }
+        Returns: boolean
+      }
       search_users_public: {
         Args: { search_term: string }
         Returns: {
@@ -476,6 +632,7 @@ export type Database = {
       }
     }
     Enums: {
+      group_role: "admin" | "member"
       wallet_status: "active" | "suspended" | "pending_activation"
       wallet_transaction_status: "pending" | "completed" | "failed" | "reversed"
       wallet_transaction_type:
@@ -611,6 +768,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      group_role: ["admin", "member"],
       wallet_status: ["active", "suspended", "pending_activation"],
       wallet_transaction_status: ["pending", "completed", "failed", "reversed"],
       wallet_transaction_type: [
