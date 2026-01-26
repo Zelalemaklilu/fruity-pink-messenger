@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { chatStore, Chat, Message, PublicProfile } from '@/lib/chatStore';
 import { supabase } from '@/integrations/supabase/client';
+import { getSessionUserSafe } from '@/lib/authSession';
 
 // =============================================
 // GLOBAL INITIALIZATION STATE
@@ -44,31 +45,8 @@ const initializeStore = async (): Promise<void> => {
 
   while (!globalIsReady && (Date.now() - startedAt) < INIT_MAX_WAIT_MS) {
     try {
-      // Prefer session (fast + reliable after SIGNED_IN). Fallback to getUser.
-      let user = null;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        user = session?.user ?? null;
-      } catch (authErr) {
-        if (isAbortError(authErr)) {
-          await sleep(INIT_RETRY_INTERVAL_MS);
-          continue;
-        }
-        console.warn('[useChatStore] getSession failed:', authErr);
-      }
-
-      if (!user) {
-        try {
-          const { data: { user: directUser } } = await supabase.auth.getUser();
-          user = directUser;
-        } catch (authErr) {
-          if (isAbortError(authErr)) {
-            await sleep(INIT_RETRY_INTERVAL_MS);
-            continue;
-          }
-          console.warn('[useChatStore] getUser failed:', authErr);
-        }
-      }
+      // Use deduplicated auth helper to avoid lock contention / AbortError
+      const { user } = await getSessionUserSafe({ maxAgeMs: 0, maxAbortRetries: 3 });
 
       if (user) {
         if (user.id !== globalUserId) {

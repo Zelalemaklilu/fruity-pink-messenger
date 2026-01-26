@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { useCallManager, CallState, ActiveCall } from '@/hooks/useCallManager';
 import { CallType } from '@/hooks/useWebRTC';
 import { supabase } from '@/integrations/supabase/client';
+import { getSessionUserSafe } from '@/lib/authSession';
 
 interface CallContextType {
   // State
@@ -49,7 +50,7 @@ export const CallProvider: React.FC<CallProviderProps> = ({ children }) => {
   // Load current user
   useEffect(() => {
     const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await getSessionUserSafe({ maxAgeMs: 0 });
       if (user) {
         setUserId(user.id);
         
@@ -58,7 +59,7 @@ export const CallProvider: React.FC<CallProviderProps> = ({ children }) => {
           .from('profiles')
           .select('name, avatar_url')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
         if (profile) {
           setUserName(profile.name || 'User');

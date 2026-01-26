@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useChatStoreInit } from '@/hooks/useChatStore';
 import { chatStore } from '@/lib/chatStore';
 import { cn } from '@/lib/utils';
+import { getSessionUserSafe } from '@/lib/authSession';
 
 // Only show in development
 const IS_DEV = import.meta.env.DEV;
@@ -42,10 +43,10 @@ export function DevHealthBanner() {
   // Check auth status
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
+      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
+      if (user) {
         setAuthStatus('authenticated');
-        setUserId(session.user.id);
+        setUserId(user.id);
       } else {
         setAuthStatus('unauthenticated');
         setUserId(null);
