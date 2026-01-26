@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { isUsernameUnique, updateProfile } from "@/lib/supabaseService";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { getSessionUserSafe } from "@/lib/authSession";
 
 const AddAccount = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -18,7 +18,7 @@ const AddAccount = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
       if (!user) {
         navigate("/auth");
         return;

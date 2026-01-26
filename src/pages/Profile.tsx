@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { getProfile, updateProfile, Profile as ProfileType } from "@/lib/supabaseService";
 import { isUsernameUnique } from "@/lib/supabaseAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { getSessionUserSafe } from "@/lib/authSession";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ const Profile = () => {
   const loadProfile = async () => {
     setLoading(true);
     
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
     
     if (user) {
       setCurrentUserId(user.id);

@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { useCall } from "@/contexts/CallContext";
 import { callLogService, CallLogWithProfile } from "@/lib/callLogService";
 import { toast } from "sonner";
+import { getSessionUserSafe } from "@/lib/authSession";
 
 const formatDuration = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
@@ -47,7 +47,7 @@ const Calls = () => {
     const loadData = async () => {
       setLoading(true);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
       if (user) {
         setCurrentUserId(user.id);
         const logs = await callLogService.getCallLogs(50);

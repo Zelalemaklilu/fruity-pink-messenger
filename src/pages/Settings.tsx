@@ -7,9 +7,9 @@ import { Switch } from "@/components/ui/switch";
 import { useNavigate } from "react-router-dom";
 import { getProfile, Profile } from "@/lib/supabaseService";
 import { signOut } from "@/lib/supabaseAuth";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { getSessionUserSafe } from "@/lib/authSession";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ const Settings = () => {
 
   const loadProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
       
       if (user) {
         const userProfile = await getProfile(user.id);
