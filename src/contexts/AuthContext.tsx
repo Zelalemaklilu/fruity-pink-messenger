@@ -8,6 +8,7 @@ export type AuthState = "loading" | "authenticated" | "unauthenticated";
 type AuthContextValue = {
   authState: AuthState;
   user: User | null;
+  userId: string | null;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ authState, user }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ authState, user, userId: user?.id ?? null }}>{children}</AuthContext.Provider>
   );
 }
 

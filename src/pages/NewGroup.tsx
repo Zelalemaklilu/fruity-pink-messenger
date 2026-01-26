@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Users, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Users, Camera, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
 import { useChatList, useProfile } from "@/hooks/useChatStore";
 import { chatStore } from "@/lib/chatStore";
+import { createGroup } from "@/lib/groupService";
 import { toast } from "sonner";
 
 // Contact item for group selection
@@ -53,11 +54,13 @@ const ContactItem = ({ userId, selected, onToggle }: ContactItemProps) => {
         </p>
       </div>
 
-      <Checkbox
-        checked={selected}
-        onCheckedChange={onToggle}
-        className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-      />
+      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+        selected 
+          ? 'bg-primary border-primary' 
+          : 'border-muted-foreground/30'
+      }`}>
+        {selected && <Check className="h-4 w-4 text-primary-foreground" />}
+      </div>
     </div>
   );
 };
@@ -87,28 +90,49 @@ const NewGroup = () => {
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim() || selectedContacts.length === 0) return;
+    if (!groupName.trim()) {
+      toast.error('Please enter a group name');
+      return;
+    }
+    
+    if (selectedContacts.length === 0) {
+      toast.error('Please select at least one member');
+      return;
+    }
     
     setCreating(true);
     
-    // Note: Group chats require a separate groups table in the database
-    // For now, show a message that this feature is coming soon
-    toast.info("Group chats coming soon! For now, you can chat one-on-one.");
-    
-    setCreating(false);
-    navigate('/chats');
+    try {
+      const group = await createGroup(
+        groupName.trim(),
+        selectedContacts,
+        groupDescription.trim() || undefined
+      );
+      
+      if (group) {
+        toast.success('Group created!');
+        navigate(`/group/${group.id}`);
+      } else {
+        toast.error('Failed to create group');
+      }
+    } catch (error) {
+      console.error('Error creating group:', error);
+      toast.error('Failed to create group');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
+      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Button 
               variant="ghost" 
               size="icon"
-              onClick={() => navigate("/settings")}
+              onClick={() => navigate(-1)}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -129,7 +153,7 @@ const NewGroup = () => {
         <div className="flex items-center space-x-4 mb-4">
           <div className="relative">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-              <Camera className="h-6 w-6 text-muted-foreground" />
+              <Users className="h-6 w-6 text-muted-foreground" />
             </div>
             <Button 
               size="icon"
@@ -141,16 +165,18 @@ const NewGroup = () => {
           
           <div className="flex-1 space-y-3">
             <Input
-              placeholder="Group name"
+              placeholder="Group name *"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               className="font-medium"
+              maxLength={100}
             />
             <Textarea
               placeholder="Group description (optional)"
               value={groupDescription}
               onChange={(e) => setGroupDescription(e.target.value)}
               className="min-h-[60px] resize-none"
+              maxLength={500}
             />
           </div>
         </div>
@@ -158,7 +184,7 @@ const NewGroup = () => {
 
       {/* Selected Members Count */}
       {selectedContacts.length > 0 && (
-        <div className="p-4 bg-muted/30">
+        <div className="p-4 bg-muted/30 border-b border-border">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <Users className="h-4 w-4" />
             <span>{selectedContacts.length} member{selectedContacts.length > 1 ? 's' : ''} selected</span>
