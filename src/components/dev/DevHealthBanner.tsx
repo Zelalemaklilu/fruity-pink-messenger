@@ -43,7 +43,7 @@ export function DevHealthBanner() {
   // Check auth status
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
+      const { user } = await getSessionUserSafe();
       if (user) {
         setAuthStatus('authenticated');
         setUserId(user.id);

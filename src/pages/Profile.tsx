@@ -35,7 +35,7 @@ const Profile = () => {
   const loadProfile = async () => {
     setLoading(true);
     
-    const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
+    const { user } = await getSessionUserSafe();
     
     if (user) {
       setCurrentUserId(user.id);

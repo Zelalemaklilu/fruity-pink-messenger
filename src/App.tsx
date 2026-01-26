@@ -73,7 +73,7 @@ const AppRoutes = () => {
     );
 
     // THEN check existing session (deduped to avoid auth-client lock AbortError)
-    getSessionUserSafe({ maxAgeMs: 0 }).then(({ session, user }) => {
+    getSessionUserSafe().then(({ session, user }) => {
       const u = session?.user ?? user;
       if (u) {
         setUser(u);
