@@ -1,9 +1,16 @@
-import { useCall } from '@/contexts/CallContext';
+import { useContext } from 'react';
+import { CallContext } from '@/contexts/CallContext';
 import { IncomingCallScreen } from './IncomingCallScreen';
 import { CallScreen } from './CallScreen';
 
 export const CallOverlay = () => {
-  const { callState, isReady } = useCall();
+  // Use context directly to avoid throwing if provider not ready
+  const context = useContext(CallContext);
+  
+  // If context not available yet, render nothing (don't crash)
+  if (!context) return null;
+  
+  const { callState, isReady } = context;
 
   if (!isReady) return null;
 
