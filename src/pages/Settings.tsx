@@ -9,10 +9,11 @@ import { getProfile, Profile } from "@/lib/supabaseService";
 import { signOut } from "@/lib/supabaseAuth";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { getSessionUserSafe } from "@/lib/authSession";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -26,23 +27,33 @@ const Settings = () => {
   } = usePushNotifications();
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    let mounted = true;
 
-  const loadProfile = async () => {
-    try {
-      const { user } = await getSessionUserSafe();
-      
-      if (user) {
-        const userProfile = await getProfile(user.id);
-        setProfile(userProfile);
+    const loadProfile = async () => {
+      if (!user?.id) {
+        if (mounted) {
+          setProfile(null);
+          setLoading(false);
+        }
+        return;
       }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      if (mounted) setLoading(true);
+      try {
+        const userProfile = await getProfile(user.id);
+        if (mounted) setProfile(userProfile);
+      } catch (error) {
+        console.error("Error loading profile:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadProfile();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
