@@ -107,22 +107,35 @@ class ChatStore {
   // INITIALIZATION
   // =============================================
 
-  async initialize(userId: string): Promise<void> {
+  async initialize(userId: string): Promise<boolean> {
     const isSameUser = this.currentUserId === userId;
 
     // If we're already initialized for this user and have an active subscription + data,
     // avoid doing work. (Important: if we previously failed and chats are still empty,
     // we DO want to retry.)
-    if (isSameUser && this.chatListChannel && this.chats.size > 0) return;
+    if (isSameUser && this.chatListChannel && this.chats.size > 0) return true;
 
     this.currentUserId = userId;
     console.log('[ChatStore] Initializing for user:', userId);
 
-    // Load initial data (throws on abort so upper layers can retry)
-    await this.loadChats();
+    // Load initial data
+    const success = await this.loadChats();
 
     // Subscribe to chat list changes
     this.subscribeToChatList();
+    
+    return success;
+  }
+
+  // Force refresh all data - useful when init failed silently
+  async forceRefresh(): Promise<boolean> {
+    if (!this.currentUserId) return false;
+    console.log('[ChatStore] Force refreshing data...');
+    return this.loadChats();
+  }
+
+  getCurrentUserId(): string | null {
+    return this.currentUserId;
   }
 
   cleanup(): void {
@@ -157,13 +170,15 @@ class ChatStore {
   // CHAT LIST
   // =============================================
 
-  private async loadChats(): Promise<void> {
-    if (!this.currentUserId) return;
+  private async loadChats(): Promise<boolean> {
+    if (!this.currentUserId) return false;
 
     const MAX_ABORT_RETRIES = 4;
 
     for (let attempt = 1; attempt <= MAX_ABORT_RETRIES; attempt++) {
       try {
+        console.log(`[ChatStore] loadChats attempt ${attempt} for user ${this.currentUserId}`);
+        
         const { data, error } = await supabase
           .from('chats')
           .select('*')
@@ -178,18 +193,19 @@ class ChatStore {
               continue;
             }
             console.warn('[ChatStore] loadChats exhausted retries on AbortError');
-            return; // Fallback silently - UI will work with empty cache
+            return false;
           }
           console.error('[ChatStore] Error loading chats:', error);
-          return;
+          return false;
         }
 
         // Success - update cache
+        console.log(`[ChatStore] Loaded ${data?.length || 0} chats`);
         this.chats.clear();
         (data || []).forEach((chat) => this.chats.set(chat.id, chat));
         this.lastSyncTimes.chats = new Date();
         this.notifyChatListeners();
-        return;
+        return true;
       } catch (err: unknown) {
         if (isAbortError(err)) {
           if (attempt < MAX_ABORT_RETRIES) {
@@ -197,12 +213,13 @@ class ChatStore {
             continue;
           }
           console.warn('[ChatStore] loadChats exhausted retries on thrown AbortError');
-          return;
+          return false;
         }
         console.error('[ChatStore] Error loading chats:', err);
-        return;
+        return false;
       }
     }
+    return false;
   }
 
   private subscribeToChatList(): void {
@@ -796,10 +813,6 @@ class ChatStore {
     return chat.participant_1 === this.currentUserId 
       ? chat.participant_2 
       : chat.participant_1;
-  }
-
-  getCurrentUserId(): string | null {
-    return this.currentUserId;
   }
 
   // Dev health banner utilities

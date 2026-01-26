@@ -4,7 +4,7 @@
  * Optimized for instant navigation (Telegram-grade speed)
  */
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { chatStore, Chat, Message, PublicProfile } from '@/lib/chatStore';
 import { supabase } from '@/integrations/supabase/client';
 import { getSessionUserSafe } from '@/lib/authSession';
@@ -53,12 +53,19 @@ const initializeStore = async (): Promise<void> => {
           globalUserId = user.id;
         }
 
-        // initialize() now handles its own AbortError retries and won't throw
-        await chatStore.initialize(user.id);
-
-        globalIsReady = true;
-        notifyReadyListeners();
-        return;
+        // initialize() returns boolean indicating success
+        const success = await chatStore.initialize(user.id);
+        
+        if (success) {
+          globalIsReady = true;
+          notifyReadyListeners();
+          return;
+        } else {
+          // loadChats failed - wait and retry
+          console.warn('[useChatStore] initialize returned false, retrying...');
+          await sleep(INIT_RETRY_INTERVAL_MS);
+          continue;
+        }
       }
     } catch (error: unknown) {
       // Retry on AbortError - happens during rapid navigation / token refresh
@@ -74,10 +81,9 @@ const initializeStore = async (): Promise<void> => {
   }
 
   // Timed out - still mark as ready so UI doesn't stay stuck on spinner forever
-  // but with empty data (user can refresh or sign in)
+  // User can manually refresh or the Chats page will trigger a retry
+  console.warn('[useChatStore] Init timed out after', INIT_MAX_WAIT_MS, 'ms');
   if (globalUserId) {
-    // We have a userId, meaning auth succeeded but loadChats may have failed
-    // Still mark ready to unblock UI
     globalIsReady = true;
   }
   notifyReadyListeners();
@@ -142,10 +148,12 @@ export function useChatList(): {
   chats: Chat[];
   loading: boolean;
   totalUnread: number;
+  forceRefresh: () => Promise<void>;
 } {
   const [chats, setChats] = useState<Chat[]>(() => chatStore.getChatList());
   const [loading, setLoading] = useState(true);
-  const { isReady } = useChatStoreInit();
+  const { isReady, userId } = useChatStoreInit();
+  const refreshAttempted = useRef(false);
 
   useEffect(() => {
     // Subscribe to updates first
@@ -159,6 +167,16 @@ export function useChatList(): {
       const cached = chatStore.getChatList();
       setChats(cached);
       setLoading(false);
+      
+      // If no chats but we have a user, try force refresh once
+      if (cached.length === 0 && userId && !refreshAttempted.current) {
+        refreshAttempted.current = true;
+        console.log('[useChatList] No cached chats, forcing refresh...');
+        chatStore.forceRefresh().then(() => {
+          const refreshed = chatStore.getChatList();
+          setChats(refreshed);
+        });
+      }
     }
 
     // Also handle the case where init completes after mount
@@ -171,11 +189,19 @@ export function useChatList(): {
     }
 
     return unsubscribe;
-  }, [isReady]);
+  }, [isReady, userId]);
 
   const totalUnread = chats.reduce((sum, chat) => sum + chatStore.getUnreadCount(chat), 0);
 
-  return { chats, loading, totalUnread };
+  const forceRefresh = useCallback(async () => {
+    setLoading(true);
+    await chatStore.forceRefresh();
+    const refreshed = chatStore.getChatList();
+    setChats(refreshed);
+    setLoading(false);
+  }, []);
+
+  return { chats, loading, totalUnread, forceRefresh };
 }
 
 // =============================================
