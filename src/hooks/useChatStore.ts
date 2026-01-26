@@ -1,255 +1,158 @@
-/**
- * React hooks for the ChatStore
- * Provides reactive bindings to the in-memory chat store
- * Optimized for instant navigation (Telegram-grade speed)
- */
-
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { chatStore, Chat, Message, PublicProfile } from '@/lib/chatStore';
-import { supabase } from '@/integrations/supabase/client';
-import { getSessionUserSafe } from '@/lib/authSession';
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { chatStore, Chat, Message, PublicProfile } from "@/lib/chatStore";
+import { supabase } from "@/integrations/supabase/client";
 
 // =============================================
-// GLOBAL INITIALIZATION STATE
+// MAIN INIT HOOK
 // =============================================
 
-let globalInitPromise: Promise<void> | null = null;
-let globalUserId: string | null = null;
-let globalIsReady = false;
-let initStarted = false;
-const readyListeners = new Set<() => void>();
+export function useChatStoreInit() {
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-const INIT_MAX_WAIT_MS = 12_000;
-const INIT_RETRY_INTERVAL_MS = 400;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-const notifyReadyListeners = () => {
-  readyListeners.forEach(listener => listener());
-};
-
-const isAbortError = (err: unknown): boolean => {
-  const e = err as any;
-  const msg = String(e?.message ?? '');
-  return (
-    e?.name === 'AbortError' ||
-    msg.includes('aborted') ||
-    msg.includes('signal is aborted')
-  );
-};
-
-const initializeStore = async (userId: string): Promise<void> => {
-  if (globalIsReady && globalUserId === userId) return;
-
-  globalUserId = userId;
-  console.log('[useChatStore] Starting initialization for user:', userId);
-
-  const startedAt = Date.now();
-  let attemptCount = 0;
-
-  while (!globalIsReady && (Date.now() - startedAt) < INIT_MAX_WAIT_MS) {
-    attemptCount++;
-    
-    try {
-      // Wait a bit before first attempt to let auth settle
-      if (attemptCount === 1) {
-        await sleep(300);
-      }
-
-      console.log(`[useChatStore] Init attempt ${attemptCount}`);
-
-      // initialize() returns boolean indicating success
-      const success = await chatStore.initialize(userId);
-      
-      if (success) {
-        console.log('[useChatStore] Initialization successful!');
-        globalIsReady = true;
-        notifyReadyListeners();
-        return;
-      } else {
-        // loadChats failed - wait and retry with exponential backoff
-        console.warn('[useChatStore] initialize returned false, retrying...');
-        await sleep(Math.min(INIT_RETRY_INTERVAL_MS * attemptCount, 2000));
-        continue;
-      }
-    } catch (error: unknown) {
-      // Retry on AbortError - happens during rapid navigation / token refresh
-      if (isAbortError(error)) {
-        console.warn('[useChatStore] AbortError during init, retrying...');
-        await sleep(Math.min(INIT_RETRY_INTERVAL_MS * attemptCount, 2000));
-        continue;
-      }
-      console.error('[useChatStore] Init error:', error);
-    }
-
-    await sleep(INIT_RETRY_INTERVAL_MS);
-  }
-
-  // Timed out - mark as ready with empty data so UI unblocks
-  console.warn('[useChatStore] Init timed out after', INIT_MAX_WAIT_MS, 'ms');
-  globalIsReady = true;
-  notifyReadyListeners();
-};
-
-// Subscribe to auth changes globally - triggered AFTER auth operations complete
-supabase.auth.onAuthStateChange((event, session) => {
-  console.log('[useChatStore] Auth state change:', event);
-  
-  if (event === 'SIGNED_OUT') {
-    globalUserId = null;
-    globalIsReady = false;
-    initStarted = false;
-    globalInitPromise = null;
-    chatStore.cleanup();
-    notifyReadyListeners();
-  } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-    // Only reinitialize if user changed or we're not ready
-    const isSameUser = globalUserId === session.user.id;
-    if (isSameUser && globalIsReady) {
-      console.log('[useChatStore] Same user already ready, skipping reinit');
-      return;
-    }
-    
-    // Reset state for new init
-    globalIsReady = false;
-    initStarted = true;
-    
-    // Small delay to let auth client fully settle before making DB queries
-    globalInitPromise = sleep(500).then(() => initializeStore(session.user.id));
-  }
-});
-
-// =============================================
-// STORE INITIALIZATION HOOK
-// =============================================
-
-export function useChatStoreInit(): { isReady: boolean; userId: string | null } {
-  const [, forceUpdate] = useState({});
-  
   useEffect(() => {
-    const listener = () => forceUpdate({});
-    readyListeners.add(listener);
-    
-    // Ensure initialization starts (and can be retried if a prior attempt timed out)
-    if (!globalInitPromise && !globalIsReady) {
-      initStarted = true;
-      globalInitPromise = (async () => {
-        try {
-          // Get current user from session
-          const { user } = await getSessionUserSafe({ maxAgeMs: 0, maxAbortRetries: 5 });
-          if (user) {
-            await initializeStore(user.id);
-          } else {
-            console.log('[useChatStoreInit] No user session found');
+    let mounted = true;
+
+    const initializeFromSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
+        if (session?.user) {
+          console.log("[useChatStore] Found session, initializing for:", session.user.id);
+          await chatStore.initialize(session.user.id);
+          if (mounted) {
+            setIsInitialized(true);
+            setError(null);
           }
-        } catch (err) {
-          console.error('[useChatStoreInit] Failed to get session:', err);
+        } else {
+          console.log("[useChatStore] No session found");
+          if (mounted) {
+            setIsInitialized(true);
+          }
         }
-      })().finally(() => {
-        // Allow future retries if we still didn't become ready
-        if (!globalIsReady) {
-          initStarted = false;
-          globalInitPromise = null;
+      } catch (err) {
+        console.error("[useChatStore] Init error:", err);
+        if (mounted) {
+          setError("Failed to initialize");
+          setIsInitialized(true);
         }
-      });
-    } else if (globalInitPromise) {
-      globalInitPromise.then(() => forceUpdate({})).catch(() => {});
-    }
-    
+      }
+    };
+
+    initializeFromSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log("[useChatStore] Auth state change:", event);
+        
+        if (!mounted) return;
+
+        if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+          try {
+            await chatStore.initialize(session.user.id);
+            if (mounted) {
+              setIsInitialized(true);
+              setError(null);
+            }
+          } catch (err) {
+            console.error("[useChatStore] Re-init error:", err);
+          }
+        } else if (event === "SIGNED_OUT") {
+          chatStore.cleanup();
+          if (mounted) {
+            setIsInitialized(true);
+          }
+        }
+      }
+    );
+
     return () => {
-      readyListeners.delete(listener);
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  return { isReady: globalIsReady, userId: globalUserId };
+  return { isInitialized, error, isReady: isInitialized };
 }
 
 // =============================================
-// CHAT LIST HOOK - INSTANT FROM CACHE
+// CHAT LIST HOOK
 // =============================================
 
-export function useChatList(): {
-  chats: Chat[];
-  loading: boolean;
-  totalUnread: number;
-  forceRefresh: () => Promise<void>;
-} {
-  const [chats, setChats] = useState<Chat[]>(() => chatStore.getChatList());
-  const [loading, setLoading] = useState(true);
-  const { isReady, userId } = useChatStoreInit();
-  const refreshAttempted = useRef(false);
+export function useChatList() {
+  const [chats, setChats] = useState<Chat[]>(chatStore.getChatList());
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Subscribe to updates first
     const unsubscribe = chatStore.subscribeChatList((newChats) => {
       setChats(newChats);
       setLoading(false);
     });
 
-    // When ready, immediately fetch data
-    if (isReady) {
-      const cached = chatStore.getChatList();
-      setChats(cached);
-      setLoading(false);
-      
-      // If no chats but we have a user, try force refresh once
-      if (cached.length === 0 && userId && !refreshAttempted.current) {
-        refreshAttempted.current = true;
-        console.log('[useChatList] No cached chats, forcing refresh...');
-        chatStore.forceRefresh().then(() => {
-          const refreshed = chatStore.getChatList();
-          setChats(refreshed);
-        });
-      }
-    }
-
-    // Also handle the case where init completes after mount
-    if (globalInitPromise) {
-      globalInitPromise.then(() => {
-        const cached = chatStore.getChatList();
-        setChats(cached);
-        setLoading(false);
-      }).catch(() => {});
-    }
-
     return unsubscribe;
-  }, [isReady, userId]);
-
-  const totalUnread = chats.reduce((sum, chat) => sum + chatStore.getUnreadCount(chat), 0);
-
-  const forceRefresh = useCallback(async () => {
-    setLoading(true);
-    await chatStore.forceRefresh();
-    const refreshed = chatStore.getChatList();
-    setChats(refreshed);
-    setLoading(false);
   }, []);
 
-  return { chats, loading, totalUnread, forceRefresh };
+  const totalUnread = useMemo(() => {
+    const userId = chatStore.getCurrentUserId();
+    return chats.reduce((sum, chat) => {
+      if (chat.participant_1 === userId) {
+        return sum + (chat.unread_count_1 || 0);
+      }
+      return sum + (chat.unread_count_2 || 0);
+    }, 0);
+  }, [chats]);
+
+  return { chats, loading, totalUnread };
 }
 
 // =============================================
-// MESSAGES HOOK - SHOW CACHED INSTANTLY
+// CHAT INFO HOOK
 // =============================================
 
-export function useMessages(chatId: string | undefined): {
-  messages: Message[];
-  loading: boolean;
-  sendMessage: (content: string, type?: 'text' | 'image' | 'file' | 'voice', mediaUrl?: string, fileName?: string) => Promise<boolean>;
-  deleteMessage: (messageId: string) => Promise<boolean>;
-} {
-  // Get cached messages immediately (no async)
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (chatId) {
-      return chatStore.getMessages(chatId);
+export function useChatInfo(chatId: string | undefined) {
+  const [chat, setChat] = useState<Chat | undefined>(
+    chatId ? chatStore.getChat(chatId) : undefined
+  );
+  const [loading, setLoading] = useState(!chat);
+
+  useEffect(() => {
+    if (!chatId) return;
+
+    const cached = chatStore.getChat(chatId);
+    if (cached) {
+      setChat(cached);
+      setLoading(false);
     }
-    return [];
-  });
-  
-  // Only show loading if no cached messages exist
+
+    const unsubscribe = chatStore.subscribeChatList((chats) => {
+      const found = chats.find(c => c.id === chatId);
+      if (found) {
+        setChat(found);
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, [chatId]);
+
+  const otherUserId = useMemo(() => {
+    if (!chat) return null;
+    const userId = chatStore.getCurrentUserId();
+    return chat.participant_1 === userId ? chat.participant_2 : chat.participant_1;
+  }, [chat]);
+
+  return { chat, otherUserId, loading };
+}
+
+// =============================================
+// MESSAGES HOOK
+// =============================================
+
+export function useMessages(chatId: string | undefined) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const { isReady } = useChatStoreInit();
 
   useEffect(() => {
     if (!chatId) {
@@ -258,102 +161,61 @@ export function useMessages(chatId: string | undefined): {
       return;
     }
 
-    // Show cached immediately
-    const cached = chatStore.getMessages(chatId);
-    if (cached.length > 0) {
-      setMessages(cached);
-      setLoading(false);
-    }
+    setLoading(true);
 
-    // Subscribe to updates (will get cache immediately too)
-    const unsubscribe = chatStore.subscribeToMessages(chatId, (newMessages) => {
-      setMessages(newMessages);
+    // Load messages
+    chatStore.loadMessages(chatId).then((msgs) => {
+      setMessages(msgs);
       setLoading(false);
     });
 
-    // Load from server in background (only if ready)
-    if (isReady) {
-      chatStore.loadMessages(chatId).then(() => {
-        setLoading(false);
-      });
-      chatStore.markAsRead(chatId);
-    }
-
-    // Handle initialization completing after mount
-    if (globalInitPromise) {
-      globalInitPromise.then(() => {
-        chatStore.loadMessages(chatId).then(() => {
-          setLoading(false);
-        });
-        chatStore.markAsRead(chatId);
-      }).catch(() => {});
-    }
+    // Subscribe to updates
+    const unsubscribe = chatStore.subscribeToMessages(chatId, (newMessages) => {
+      setMessages(newMessages);
+    });
 
     return unsubscribe;
-  }, [chatId, isReady]);
+  }, [chatId]);
 
   const sendMessage = useCallback(async (
     content: string,
-    type: 'text' | 'image' | 'file' | 'voice' = 'text',
+    messageType: 'text' | 'image' | 'file' | 'voice' = 'text',
     mediaUrl?: string,
     fileName?: string
-  ): Promise<boolean> => {
+  ) => {
     if (!chatId) return false;
-    const result = await chatStore.sendMessage(chatId, content, type, mediaUrl, fileName);
-    return result !== null;
+    try {
+      const result = await chatStore.sendMessage(chatId, content, messageType, mediaUrl, fileName);
+      return !!result;
+    } catch (error) {
+      console.error("Send message error:", error);
+      return false;
+    }
   }, [chatId]);
 
-  const deleteMessage = useCallback(async (messageId: string): Promise<boolean> => {
+  const deleteMessage = useCallback(async (messageId: string) => {
     if (!chatId) return false;
-    return chatStore.deleteMessage(messageId, chatId);
+    try {
+      await chatStore.deleteMessage(messageId, chatId);
+      return true;
+    } catch (error) {
+      console.error("Delete message error:", error);
+      return false;
+    }
   }, [chatId]);
 
   return { messages, loading, sendMessage, deleteMessage };
 }
 
 // =============================================
-// TYPING INDICATOR HOOK
+// PROFILE HOOK
 // =============================================
 
-export function useTypingIndicator(chatId: string | undefined): {
-  typingUsers: string[];
-  setTyping: (isTyping: boolean) => void;
-} {
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const { isReady } = useChatStoreInit();
-
-  useEffect(() => {
-    if (!isReady || !chatId) return;
-
-    const unsubscribe = chatStore.subscribeToTyping(chatId, setTypingUsers);
-    return unsubscribe;
-  }, [isReady, chatId]);
-
-  const setTyping = useCallback((isTyping: boolean) => {
-    if (chatId) {
-      chatStore.setTyping(chatId, isTyping);
-    }
-  }, [chatId]);
-
-  return { typingUsers, setTyping };
-}
-
-// =============================================
-// PROFILE HOOK - INSTANT FROM CACHE
-// =============================================
-
-export function useProfile(userId: string | undefined): {
-  profile: PublicProfile | null;
-  loading: boolean;
-} {
-  const [profile, setProfile] = useState<PublicProfile | null>(() => {
-    if (userId) {
-      return chatStore.getCachedProfile(userId) || null;
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState(true);
-  const { isReady } = useChatStoreInit();
+export function useProfile(userId: string | undefined) {
+  const [profile, setProfile] = useState<PublicProfile | null>(
+    userId ? chatStore.getCachedProfile(userId) || null : null
+  );
+  const [loading, setLoading] = useState(!profile && !!userId);
 
   useEffect(() => {
     if (!userId) {
@@ -362,7 +224,6 @@ export function useProfile(userId: string | undefined): {
       return;
     }
 
-    // Check cache first (instant)
     const cached = chatStore.getCachedProfile(userId);
     if (cached) {
       setProfile(cached);
@@ -370,79 +231,59 @@ export function useProfile(userId: string | undefined): {
       return;
     }
 
-    // Fetch from server only if ready
-    if (isReady) {
-      chatStore.getProfile(userId).then((p) => {
-        setProfile(p);
-        setLoading(false);
-      });
-    }
-
-    // Handle initialization completing after mount
-    if (globalInitPromise) {
-      globalInitPromise.then(() => {
-        chatStore.getProfile(userId).then((p) => {
-          setProfile(p);
-          setLoading(false);
-        });
-      }).catch(() => {});
-    }
-  }, [isReady, userId]);
+    setLoading(true);
+    chatStore.getProfile(userId).then((p) => {
+      setProfile(p);
+      setLoading(false);
+    });
+  }, [userId]);
 
   return { profile, loading };
 }
 
 // =============================================
-// CHAT INFO HOOK - INSTANT FROM CACHE
+// TYPING INDICATOR HOOK
 // =============================================
 
-export function useChatInfo(chatId: string | undefined): {
-  chat: Chat | null;
-  otherUserId: string | null;
-  loading: boolean;
-} {
-  const [chat, setChat] = useState<Chat | null>(() => {
-    if (chatId) {
-      return chatStore.getChat(chatId) || null;
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState(() => {
-    if (!chatId) return false;
-    return !chatStore.getChat(chatId);
-  });
-  const { isReady } = useChatStoreInit();
+export function useTypingIndicator(chatId: string | undefined) {
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
   useEffect(() => {
     if (!chatId) {
-      setChat(null);
-      setLoading(false);
+      setTypingUsers([]);
       return;
     }
 
-    // Get from cache immediately (instant)
-    const cachedChat = chatStore.getChat(chatId);
-    if (cachedChat) {
-      setChat(cachedChat);
-      setLoading(false);
-    }
-
-    // Subscribe to updates
-    const unsubscribe = chatStore.subscribeChatList((chats) => {
-      const updated = chats.find(c => c.id === chatId);
-      if (updated) {
-        setChat(updated);
-        setLoading(false);
-      } else if (isReady && !cachedChat) {
-        // Chat not found after ready
-        setLoading(false);
-      }
+    const unsubscribe = chatStore.subscribeToTyping(chatId, (users) => {
+      setTypingUsers(users);
     });
 
     return unsubscribe;
-  }, [chatId, isReady]);
+  }, [chatId]);
 
-  const otherUserId = chat ? chatStore.getOtherUserId(chat) : null;
+  const setTyping = useCallback((isTyping: boolean) => {
+    if (!chatId) return;
+    chatStore.setTyping(chatId, isTyping);
+  }, [chatId]);
 
-  return { chat, otherUserId, loading };
+  return { typingUsers, setTyping };
+}
+
+// =============================================
+// FORCE REFRESH
+// =============================================
+
+export function useForceRefresh() {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await chatStore.forceRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  return { refresh, refreshing };
 }

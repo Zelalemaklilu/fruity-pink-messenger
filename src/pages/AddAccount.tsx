@@ -18,7 +18,7 @@ const AddAccount = () => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { user } = await getSessionUserSafe({ maxAgeMs: 500 });
+      const { user } = await getSessionUserSafe();
       if (!user) {
         navigate("/auth");
         return;

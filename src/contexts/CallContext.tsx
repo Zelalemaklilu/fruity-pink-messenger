@@ -50,7 +50,7 @@ export const CallProvider: React.FC<CallProviderProps> = ({ children }) => {
   // Load current user
   useEffect(() => {
     const loadUser = async () => {
-      const { user } = await getSessionUserSafe({ maxAgeMs: 0 });
+      const { user } = await getSessionUserSafe();
       if (user) {
         setUserId(user.id);
         
