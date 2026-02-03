@@ -16,6 +16,7 @@ import Calls from "./pages/Calls";
 import SavedMessages from "./pages/SavedMessages";
 import NewGroup from "./pages/NewGroup";
 import GroupChat from "./pages/GroupChat";
+import AddGroupMembers from "./pages/AddGroupMembers";
 import NewMessage from "./pages/NewMessage";
 import NewContact from "./pages/NewContact";
 import Wallet from "./pages/Wallet";
@@ -161,6 +162,9 @@ const AppRoutes = () => {
       } />
       <Route path="/group/:groupId" element={
         isAuthenticated ? <GroupChat /> : <Navigate to="/auth" replace />
+      } />
+      <Route path="/group/:groupId/add-members" element={
+        isAuthenticated ? <AddGroupMembers /> : <Navigate to="/auth" replace />
       } />
       <Route path="/new-message" element={
         isAuthenticated ? <NewMessage /> : <Navigate to="/auth" replace />

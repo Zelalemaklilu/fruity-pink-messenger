@@ -163,15 +163,19 @@ export function useMessages(chatId: string | undefined) {
 
     setLoading(true);
 
-    // Load messages
+    // Load messages and mark as read
     chatStore.loadMessages(chatId).then((msgs) => {
       setMessages(msgs);
       setLoading(false);
+      // Mark messages as read when opening chat
+      chatStore.markAsRead(chatId);
     });
 
     // Subscribe to updates
     const unsubscribe = chatStore.subscribeToMessages(chatId, (newMessages) => {
       setMessages(newMessages);
+      // Mark as read when new messages arrive and chat is open
+      chatStore.markAsRead(chatId);
     });
 
     return unsubscribe;
@@ -203,8 +207,12 @@ export function useMessages(chatId: string | undefined) {
       return false;
     }
   }, [chatId]);
+  const markAsRead = useCallback(async () => {
+    if (!chatId) return;
+    await chatStore.markAsRead(chatId);
+  }, [chatId]);
 
-  return { messages, loading, sendMessage, deleteMessage };
+  return { messages, loading, sendMessage, deleteMessage, markAsRead };
 }
 
 // =============================================
