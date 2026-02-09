@@ -23,8 +23,8 @@ const Wallet = () => {
     try {
       const data = await walletService.getWalletBalance(forceRefresh);
       setWallet(data.wallet);
-      setTransactions(data.transactions.slice(0, 5));
-      setStats(data.stats);
+      setTransactions((data.transactions || []).slice(0, 5));
+      setStats(data.stats || { monthly_received: 0, monthly_sent: 0 });
       setNeedsActivation(data.needs_activation || !data.wallet);
     } catch (error) {
       console.error("Failed to load wallet:", error);
