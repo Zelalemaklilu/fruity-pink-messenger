@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
 import { MessageBubble } from "@/components/ui/message-bubble";
@@ -11,6 +12,7 @@ import { uploadChatImage, uploadChatFile, compressImage, validateFile } from "@/
 import { toast } from "sonner";
 import { Virtuoso } from "react-virtuoso";
 import { CallButton } from "@/components/call/CallButton";
+import TypingDots from "@/components/chat/TypingDots";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -304,9 +306,29 @@ const Chat = () => {
           />
           <div className="flex-1">
             <h2 className="font-semibold text-foreground">{chatName}</h2>
-            <p className="text-xs text-muted-foreground">
-              {isTyping ? "typing..." : isOnline ? "online" : "offline"}
-            </p>
+            <AnimatePresence mode="wait">
+              {isTyping ? (
+                <motion.div
+                  key="typing"
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  className="flex items-center space-x-1"
+                >
+                  <span className="text-xs text-primary">typing</span>
+                  <TypingDots />
+                </motion.div>
+              ) : (
+                <motion.p
+                  key="status"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  {isOnline ? "online" : "offline"}
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
           {otherUserId && (
             <CallButton
@@ -367,7 +389,10 @@ const Chat = () => {
             data={messages}
             overscan={200}
             itemContent={(index, message) => (
-              <div 
+              <motion.div
+                initial={{ opacity: 0, x: message.isOwn ? 20 : -20, y: 5 }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
                 className={`px-4 py-1 transition-all duration-300 ${
                   highlightedMessageId === message.id 
                     ? 'bg-primary/20 ring-2 ring-primary/40 rounded-lg' 
@@ -387,7 +412,7 @@ const Chat = () => {
                   messageId={!message.isOptimistic ? message.id : undefined}
                   chatId={chatId}
                 />
-              </div>
+              </motion.div>
             )}
             followOutput="smooth"
             initialTopMostItemIndex={messages.length - 1}
@@ -429,14 +454,16 @@ const Chat = () => {
             disabled={uploading}
           />
 
-          <Button 
-            size="icon" 
-            onClick={handleSendMessage}
-            disabled={!newMessage.trim() || uploading}
-            className="rounded-full bg-gradient-primary hover:opacity-90 transition-smooth"
-          >
-            <Send className="h-5 w-5" />
-          </Button>
+          <motion.div whileTap={{ scale: 0.9 }}>
+            <Button 
+              size="icon" 
+              onClick={handleSendMessage}
+              disabled={!newMessage.trim() || uploading}
+              className="rounded-full bg-gradient-primary hover:opacity-90"
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+          </motion.div>
         </div>
       </div>
     </div>
