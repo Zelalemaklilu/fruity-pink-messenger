@@ -10,6 +10,7 @@ import { chatStore, Chat, PublicProfile } from "@/lib/chatStore";
 import { searchByUsername, findOrCreateChat } from "@/lib/supabaseService";
 import { getMyGroups, GroupWithLastMessage } from "@/lib/groupService";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
 // =============================================
 // CHAT ITEM COMPONENT (MEMOIZED)
@@ -18,9 +19,10 @@ import { toast } from "sonner";
 interface ChatItemProps {
   chat: Chat;
   onClick: () => void;
+  index: number;
 }
 
-const ChatItem = ({ chat, onClick }: ChatItemProps) => {
+const ChatItem = ({ chat, onClick, index }: ChatItemProps) => {
   const otherUserId = chatStore.getOtherUserId(chat);
   const { profile } = useProfile(otherUserId);
   const unreadCount = chatStore.getUnreadCount(chat);
@@ -31,9 +33,13 @@ const ChatItem = ({ chat, onClick }: ChatItemProps) => {
   const timestamp = formatTimestamp(chat.last_message_time);
   
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.3 }}
+      whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-smooth active:bg-muted/70"
+      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors active:bg-muted/70"
     >
       <ChatAvatar
         name={name}
@@ -52,12 +58,18 @@ const ChatItem = ({ chat, onClick }: ChatItemProps) => {
               {timestamp}
             </span>
             {unreadCount > 0 && (
-              <Badge 
-                variant="destructive" 
-                className="min-w-[20px] h-5 text-xs rounded-full px-1.5 flex items-center justify-center"
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 500 }}
               >
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </Badge>
+                <Badge 
+                  variant="destructive" 
+                  className="min-w-[20px] h-5 text-xs rounded-full px-1.5 flex items-center justify-center"
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Badge>
+              </motion.div>
             )}
           </div>
         </div>
@@ -65,7 +77,7 @@ const ChatItem = ({ chat, onClick }: ChatItemProps) => {
           {chat.last_message || "No messages yet"}
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -76,15 +88,20 @@ const ChatItem = ({ chat, onClick }: ChatItemProps) => {
 interface GroupItemProps {
   group: GroupWithLastMessage;
   onClick: () => void;
+  index: number;
 }
 
-const GroupItem = ({ group, onClick }: GroupItemProps) => {
+const GroupItem = ({ group, onClick, index }: GroupItemProps) => {
   const timestamp = formatTimestamp(group.last_message_time);
   
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.3 }}
+      whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-smooth active:bg-muted/70"
+      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors active:bg-muted/70"
     >
       <div className="relative">
         <ChatAvatar
@@ -110,7 +127,7 @@ const GroupItem = ({ group, onClick }: GroupItemProps) => {
           {group.last_message || `${group.member_count} members`}
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -259,23 +276,38 @@ const Chats = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10">
+      <motion.div
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.4 }}
+        className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4 z-10"
+      >
         <div className="flex items-center space-x-4">
-          <div onClick={() => navigate('/profile')} className="cursor-pointer relative">
+          <motion.div
+            whileTap={{ scale: 0.9 }}
+            onClick={() => navigate('/profile')}
+            className="cursor-pointer relative"
+          >
             <ChatAvatar 
               name="You" 
               size="md"
               status="online"
             />
             {totalUnread > 0 && (
-              <Badge 
-                variant="destructive" 
-                className="absolute -top-1 -right-1 min-w-[18px] h-[18px] text-[10px] rounded-full px-1 flex items-center justify-center"
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 500 }}
               >
-                {totalUnread > 99 ? "99+" : totalUnread}
-              </Badge>
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] text-[10px] rounded-full px-1 flex items-center justify-center"
+                >
+                  {totalUnread > 99 ? "99+" : totalUnread}
+                </Badge>
+              </motion.div>
             )}
-          </div>
+          </motion.div>
           <div className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -297,41 +329,56 @@ const Chats = () => {
         </div>
         
         {searchQuery.startsWith('@') && searchQuery.length > 1 && (
-          <p className="text-xs text-muted-foreground mt-2 px-1">
+          <motion.p
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="text-xs text-muted-foreground mt-2 px-1"
+          >
             Press Enter to search for @{searchQuery.slice(1)}
-          </p>
+          </motion.p>
         )}
-      </div>
+      </motion.div>
 
-      {/* Chat List - show immediately from cache, loading only when truly empty */}
+      {/* Chat List */}
       {conversations.length === 0 && isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+          >
+            <Loader2 className="h-8 w-8 text-primary" />
+          </motion.div>
         </div>
       ) : (
         <div className="divide-y divide-border">
           {filteredConversations.length === 0 ? (
-            <div className="text-center py-12 px-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center py-12 px-4"
+            >
               <p className="text-muted-foreground">
                 {searchQuery ? "No chats found" : "No chats yet"}
               </p>
               <p className="text-sm text-muted-foreground mt-2">
                 Search for @username to start a conversation
               </p>
-            </div>
+            </motion.div>
           ) : (
-            filteredConversations.map((item) => 
+            filteredConversations.map((item, index) => 
               item.type === 'chat' ? (
                 <ChatItem
                   key={`chat-${item.data.id}`}
                   chat={item.data}
                   onClick={() => handleChatClick(item.data.id)}
+                  index={index}
                 />
               ) : (
                 <GroupItem
                   key={`group-${item.data.id}`}
                   group={item.data}
                   onClick={() => handleGroupClick(item.data.id)}
+                  index={index}
                 />
               )
             )
@@ -340,15 +387,22 @@ const Chats = () => {
       )}
 
       {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6">
-        <Button
-          size="icon"
-          onClick={() => navigate('/new-message')}
-          className="h-14 w-14 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
-        >
-          <Plus className="h-6 w-6" />
-        </Button>
-      </div>
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.3, type: "spring", stiffness: 260, damping: 20 }}
+        className="fixed bottom-6 right-6"
+      >
+        <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+          <Button
+            size="icon"
+            onClick={() => navigate('/new-message')}
+            className="h-14 w-14 rounded-full bg-gradient-primary hover:opacity-90 shadow-primary"
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+        </motion.div>
+      </motion.div>
     </div>
   );
 };
