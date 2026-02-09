@@ -2,3 +2,15 @@ project_id = "guabjxwdgrpyvguvmgbo"
 
 [functions.send-call-notification]
 verify_jwt = false
+
+[functions.wallet-balance]
+verify_jwt = false
+
+[functions.wallet-activate]
+verify_jwt = false
+
+[functions.wallet-deposit]
+verify_jwt = false
+
+[functions.wallet-transfer]
+verify_jwt = false

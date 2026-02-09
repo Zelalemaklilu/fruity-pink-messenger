@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 import Splash from "./pages/Splash";
 import Auth from "./pages/Auth";
 import Chats from "./pages/Chats";
@@ -95,28 +96,57 @@ const AppRoutes = () => {
   // Loading screen
   if (authState === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8">
-        <div className="text-center space-y-6 animate-in fade-in-0 duration-1000">
-          <div className="relative mx-auto w-32 h-32 rounded-3xl overflow-hidden shadow-primary">
-            <img 
-              src={logoImage} 
-              alt="Zeshopp Logo" 
-              className="w-full h-full object-cover"
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-8 overflow-hidden">
+        <div className="text-center space-y-6">
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+            className="relative mx-auto w-32 h-32"
+          >
+            <motion.div
+              className="absolute inset-0 rounded-3xl bg-primary/20 blur-xl"
+              animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.8, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
             />
-          </div>
+            <div className="relative w-32 h-32 rounded-3xl overflow-hidden shadow-primary">
+              <img 
+                src={logoImage} 
+                alt="Zeshopp Logo" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </motion.div>
           
-          <div className="space-y-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.6 }}
+            className="space-y-2"
+          >
             <h1 className="text-4xl font-bold text-foreground">
               Zeshopp Chat
             </h1>
             <p className="text-lg text-muted-foreground">
               Fast. Simple. Secure.
             </p>
-          </div>
+          </motion.div>
 
-          <div className="mt-8">
-            <div className="w-16 h-1 bg-gradient-primary rounded-full mx-auto animate-pulse" />
-          </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8 }}
+            className="mt-8 flex justify-center"
+          >
+            <div className="w-48 h-1 bg-muted rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-gradient-primary rounded-full"
+                animate={{ x: ["-100%", "100%"] }}
+                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+                style={{ width: "50%" }}
+              />
+            </div>
+          </motion.div>
         </div>
       </div>
     );
