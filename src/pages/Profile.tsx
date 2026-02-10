@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Phone, MessageSquare, MoreVertical, Images, Edit2, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Phone, MessageSquare, MoreVertical, Images, Edit2, Camera, Loader2, QrCode, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { getProfile, updateProfile, Profile as ProfileType } from "@/lib/supabaseService";
 import { isUsernameUnique } from "@/lib/supabaseAuth";
 import { getSessionUserSafe } from "@/lib/authSession";
+import { QRCodeSVG } from "qrcode.react";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -281,7 +282,7 @@ const Profile = () => {
 
       {/* Action Buttons */}
       <div className="px-4 pb-6">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Button 
             className="h-12 bg-gradient-primary hover:opacity-90 transition-smooth rounded-xl font-semibold"
             onClick={() => navigate("/chats")}
@@ -297,6 +298,51 @@ const Profile = () => {
             <Phone className="h-5 w-5 mr-2" />
             Call
           </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                className="h-12 rounded-xl font-semibold border-2 hover:bg-accent/10"
+              >
+                <QrCode className="h-5 w-5 mr-2" />
+                QR
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-xs">
+              <DialogHeader>
+                <DialogTitle className="text-center">My QR Code</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col items-center space-y-4 py-4">
+                <div className="p-4 bg-white rounded-2xl">
+                  <QRCodeSVG
+                    value={`${window.location.origin}?add=@${displayUsername}`}
+                    size={200}
+                    fgColor="#000000"
+                    bgColor="#ffffff"
+                    level="M"
+                    includeMargin={false}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground text-center">
+                  Scan to add <span className="text-primary font-semibold">@{displayUsername}</span>
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    navigator.share?.({
+                      title: `Add @${displayUsername} on Zeshopp`,
+                      text: `Chat with me on Zeshopp! My username is @${displayUsername}`,
+                      url: `${window.location.origin}?add=@${displayUsername}`
+                    }) || navigator.clipboard.writeText(`${window.location.origin}?add=@${displayUsername}`).then(() => toast.success("Link copied!"));
+                  }}
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Profile
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

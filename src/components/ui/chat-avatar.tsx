@@ -37,12 +37,14 @@ export function ChatAvatar({ src, name, size = "md", status, className }: ChatAv
       {status && (
         <div 
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background",
+            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-background",
+            size === "sm" ? "h-2.5 w-2.5" : "h-3.5 w-3.5",
             {
               "bg-status-online": status === "online",
               "bg-status-away": status === "away", 
               "bg-status-offline": status === "offline"
-            }
+            },
+            status === "online" && "animate-pulse"
           )}
         />
       )}

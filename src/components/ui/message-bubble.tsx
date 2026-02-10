@@ -21,6 +21,7 @@ import {
 import { useState, useEffect } from "react";
 import { saveMessage, unsaveMessage, isMessageSaved } from "@/lib/savedMessagesService";
 import { toast } from "sonner";
+import { MessageReactions } from "@/components/chat/MessageReactions";
 
 interface MessageBubbleProps {
   message: string;
@@ -253,6 +254,13 @@ export function MessageBubble({
           </div>
         )}
       </div>
+
+      {/* Reactions */}
+      {messageId && (
+        <div className={cn("px-2", isOwn ? "flex justify-end" : "flex justify-start")}>
+          <MessageReactions messageId={messageId} isOwn={isOwn} />
+        </div>
+      )}
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>

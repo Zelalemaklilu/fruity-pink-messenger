@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,6 +10,7 @@ import { signOut } from "@/lib/supabaseAuth";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/hooks/useTheme";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ const Settings = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   const { 
     isSupported: pushSupported, 
@@ -175,6 +177,29 @@ const Settings = () => {
           ) : (
             <p className="text-center text-muted-foreground py-4">Not logged in</p>
           )}
+        </Card>
+      </div>
+
+      {/* Theme Toggle */}
+      <div className="px-4 mb-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="p-2 rounded-lg bg-muted text-primary">
+                {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+              </div>
+              <div>
+                <span className="font-medium text-foreground">
+                  {theme === "dark" ? "Dark Mode" : "Light Mode"}
+                </span>
+                <p className="text-xs text-muted-foreground">Toggle app theme</p>
+              </div>
+            </div>
+            <Switch
+              checked={theme === "dark"}
+              onCheckedChange={toggleTheme}
+            />
+          </div>
         </Card>
       </div>
 
