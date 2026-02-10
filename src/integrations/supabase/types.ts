@@ -436,6 +436,35 @@ export type Database = {
           },
         ]
       }
+      story_views: {
+        Row: {
+          id: string
+          story_id: string
+          viewed_at: string
+          viewer_id: string
+        }
+        Insert: {
+          id?: string
+          story_id: string
+          viewed_at?: string
+          viewer_id: string
+        }
+        Update: {
+          id?: string
+          story_id?: string
+          viewed_at?: string
+          viewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_views_story_id_fkey"
+            columns: ["story_id"]
+            isOneToOne: false
+            referencedRelation: "user_stories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       typing_indicators: {
         Row: {
           chat_id: string
@@ -474,6 +503,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_stories: {
+        Row: {
+          background_color: string | null
+          content: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          media_url: string | null
+          story_type: string
+          user_id: string
+          views_count: number
+        }
+        Insert: {
+          background_color?: string | null
+          content?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          media_url?: string | null
+          story_type?: string
+          user_id: string
+          views_count?: number
+        }
+        Update: {
+          background_color?: string | null
+          content?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          media_url?: string | null
+          story_type?: string
+          user_id?: string
+          views_count?: number
+        }
+        Relationships: []
       }
       wallet_terms_acceptance: {
         Row: {

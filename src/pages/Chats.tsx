@@ -10,7 +10,8 @@ import { chatStore, Chat, PublicProfile } from "@/lib/chatStore";
 import { searchByUsername, findOrCreateChat } from "@/lib/supabaseService";
 import { getMyGroups, GroupWithLastMessage } from "@/lib/groupService";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useTransform, PanInfo } from "framer-motion";
+import { StoriesBar } from "@/components/stories/StoriesBar";
 
 // =============================================
 // CHAT ITEM COMPONENT (MEMOIZED)
@@ -26,21 +27,61 @@ const ChatItem = ({ chat, onClick, index }: ChatItemProps) => {
   const otherUserId = chatStore.getOtherUserId(chat);
   const { profile } = useProfile(otherUserId);
   const unreadCount = chatStore.getUnreadCount(chat);
+  const [showActions, setShowActions] = useState(false);
+  const x = useMotionValue(0);
   
   const name = profile?.name || profile?.username || "Loading...";
   const avatar = profile?.avatar_url || "";
   const isOnline = profile?.is_online || false;
   const timestamp = formatTimestamp(chat.last_message_time);
   
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    if (info.offset.x < -80) {
+      setShowActions(true);
+    } else {
+      setShowActions(false);
+    }
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.3 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors active:bg-muted/70"
-    >
+    <div className="relative overflow-hidden">
+      {/* Swipe action buttons */}
+      <AnimatePresence>
+        {showActions && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute right-0 top-0 bottom-0 flex items-stretch z-0"
+          >
+            <button
+              className="px-4 bg-primary text-primary-foreground flex items-center text-xs font-medium"
+              onClick={(e) => { e.stopPropagation(); toast.info("Chat muted"); setShowActions(false); }}
+            >
+              Mute
+            </button>
+            <button
+              className="px-4 bg-destructive text-destructive-foreground flex items-center text-xs font-medium"
+              onClick={(e) => { e.stopPropagation(); toast.info("Chat archived"); setShowActions(false); }}
+            >
+              Archive
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: showActions ? -140 : 0 }}
+        transition={{ delay: index * 0.05, duration: 0.3 }}
+        drag="x"
+        dragConstraints={{ left: -140, right: 0 }}
+        dragElastic={0.1}
+        onDragEnd={handleDragEnd}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => { if (!showActions) onClick(); else setShowActions(false); }}
+        className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors active:bg-muted/70 bg-background relative z-10"
+      >
       <ChatAvatar
         name={name}
         src={avatar}
@@ -77,7 +118,8 @@ const ChatItem = ({ chat, onClick, index }: ChatItemProps) => {
           {chat.last_message || "No messages yet"}
         </p>
       </div>
-    </motion.div>
+      </motion.div>
+    </div>
   );
 };
 
@@ -338,6 +380,9 @@ const Chats = () => {
           </motion.p>
         )}
       </motion.div>
+
+      {/* Stories */}
+      <StoriesBar />
 
       {/* Chat List */}
       {conversations.length === 0 && isLoading ? (
