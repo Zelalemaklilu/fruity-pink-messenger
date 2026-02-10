@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search } from "lucide-react";
+import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search, Mic, Images } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Virtuoso } from "react-virtuoso";
 import { CallButton } from "@/components/call/CallButton";
 import TypingDots from "@/components/chat/TypingDots";
+import { VoiceRecorder } from "@/components/chat/VoiceRecorder";
+import { MediaGallery } from "@/components/chat/MediaGallery";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +59,8 @@ const Chat = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
   const navigate = useNavigate();
   const { chatId } = useParams();
   const virtuosoRef = useRef<any>(null);
@@ -243,6 +246,24 @@ const Chat = () => {
     }
   };
 
+  // Handle voice message send
+  const handleVoiceSend = async (blob: Blob) => {
+    if (!chatId) return;
+    setUploading(true);
+    try {
+      const file = new globalThis.File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
+      const result = await uploadChatFile(chatId, file, () => {});
+      const success = await sendMessage("", "voice", result.url, file.name);
+      if (success) toast.success("Voice message sent!");
+      else toast.error("Failed to send voice message");
+    } catch (err) {
+      toast.error("Failed to upload voice message");
+    } finally {
+      setUploading(false);
+      setShowVoiceRecorder(false);
+    }
+  };
+
   // Handle message deletion
   const handleDeleteMessage = async (messageId: string) => {
     const success = await deleteMessage(messageId);
@@ -338,6 +359,9 @@ const Chat = () => {
               variant="icon"
             />
           )}
+          <Button variant="ghost" size="icon" onClick={() => setShowMediaGallery(true)}>
+            <Images className="h-5 w-5" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)}>
             <Search className="h-5 w-5" />
           </Button>
@@ -421,50 +445,87 @@ const Chat = () => {
         )}
       </div>
 
+      {/* Media Gallery */}
+      <AnimatePresence>
+        {showMediaGallery && chatId && (
+          <MediaGallery chatId={chatId} onClose={() => setShowMediaGallery(false)} />
+        )}
+      </AnimatePresence>
+
       {/* Input */}
       <div className="flex-shrink-0 bg-background border-t border-border p-4">
-        <div className="flex items-center space-x-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" disabled={uploading}>
-                <Paperclip className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
-                <Image className="h-4 w-4 mr-2" />
-                Photo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                <File className="h-4 w-4 mr-2" />
-                File
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Input
-            placeholder="Type a message..."
-            value={newMessage}
-            onChange={(e) => {
-              setNewMessage(e.target.value);
-              handleTyping();
-            }}
-            onKeyPress={handleKeyPress}
-            className="flex-1 bg-muted border-0 rounded-full"
-            disabled={uploading}
-          />
-
-          <motion.div whileTap={{ scale: 0.9 }}>
-            <Button 
-              size="icon" 
-              onClick={handleSendMessage}
-              disabled={!newMessage.trim() || uploading}
-              className="rounded-full bg-gradient-primary hover:opacity-90"
+        <AnimatePresence mode="wait">
+          {showVoiceRecorder ? (
+            <VoiceRecorder
+              key="voice"
+              onSend={handleVoiceSend}
+              onCancel={() => setShowVoiceRecorder(false)}
+              disabled={uploading}
+            />
+          ) : (
+            <motion.div
+              key="text"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center space-x-2"
             >
-              <Send className="h-5 w-5" />
-            </Button>
-          </motion.div>
-        </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" disabled={uploading}>
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
+                    <Image className="h-4 w-4 mr-2" />
+                    Photo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                    <File className="h-4 w-4 mr-2" />
+                    File
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Input
+                placeholder="Type a message..."
+                value={newMessage}
+                onChange={(e) => {
+                  setNewMessage(e.target.value);
+                  handleTyping();
+                }}
+                onKeyPress={handleKeyPress}
+                className="flex-1 bg-muted border-0 rounded-full"
+                disabled={uploading}
+              />
+
+              {newMessage.trim() ? (
+                <motion.div whileTap={{ scale: 0.9 }}>
+                  <Button 
+                    size="icon" 
+                    onClick={handleSendMessage}
+                    disabled={uploading}
+                    className="rounded-full bg-gradient-primary hover:opacity-90"
+                  >
+                    <Send className="h-5 w-5" />
+                  </Button>
+                </motion.div>
+              ) : (
+                <motion.div whileTap={{ scale: 0.9 }}>
+                  <Button 
+                    size="icon" 
+                    onClick={() => setShowVoiceRecorder(true)}
+                    disabled={uploading}
+                    variant="ghost"
+                    className="rounded-full"
+                  >
+                    <Mic className="h-5 w-5" />
+                  </Button>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
