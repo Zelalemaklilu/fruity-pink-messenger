@@ -72,6 +72,44 @@ All colors MUST be HSL.
     --transition-bounce: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   }
 
+  /* Light Theme */
+  .light {
+    --background: 0 0% 98%;
+    --foreground: 220 15% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 10%;
+    --primary: 338 85% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 338 85% 60%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 15% 20%;
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 338 85% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 88%;
+    --input: 220 15% 92%;
+    --ring: 338 85% 55%;
+    --chat-bubble-incoming: 220 15% 93%;
+    --chat-bubble-outgoing: 338 85% 55%;
+    --chat-bubble-text-incoming: 220 15% 15%;
+    --chat-bubble-text-outgoing: 0 0% 100%;
+    --online: 120 65% 45%;
+    --away: 45 100% 50%;
+    --offline: 0 0% 65%;
+    --read-receipt: 210 100% 50%;
+    --call-accept: 145 65% 38%;
+    --call-accept-foreground: 0 0% 100%;
+    --gradient-primary: linear-gradient(135deg, hsl(338 85% 55%), hsl(338 85% 60%));
+    --gradient-hero: linear-gradient(180deg, hsl(0 0% 98%), hsl(220 15% 95%));
+    --shadow-primary: 0 10px 30px -10px hsl(338 85% 55% / 0.2);
+    --shadow-card: 0 4px 12px -2px hsl(220 15% 50% / 0.08);
+  }
+
   .dark {
     /* Keep same dark theme values */
     --background: 220 15% 8%;

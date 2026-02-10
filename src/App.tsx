@@ -39,6 +39,7 @@ import { CallOverlay } from "@/components/call/CallOverlay";
 import { DevHealthBanner } from "@/components/dev/DevHealthBanner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { chatStore } from "@/lib/chatStore";
+import { useTheme } from "@/hooks/useTheme";
 
 const queryClient = new QueryClient();
 
@@ -237,11 +238,16 @@ const AppRoutes = () => {
   );
 };
 
+const ThemeWrapper = ({ children }: { children: React.ReactNode }) => {
+  const { theme } = useTheme();
+  return <div className={theme}>{children}</div>;
+};
+
 const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="dark">
+        <ThemeWrapper>
           <Toaster />
           <Sonner />
           <BrowserRouter>
@@ -253,7 +259,7 @@ const App = () => {
               </CallProvider>
             </AuthProvider>
           </BrowserRouter>
-        </div>
+        </ThemeWrapper>
       </TooltipProvider>
     </QueryClientProvider>
   );
