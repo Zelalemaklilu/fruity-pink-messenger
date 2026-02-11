@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MessageSearch } from "@/components/chat/MessageSearch";
+import { getChatWallpaper, getWallpaperStyle } from "@/lib/chatWallpaperService";
 
 // =============================================
 // TYPES
@@ -397,7 +398,7 @@ const Chat = () => {
       )}
 
       {/* Messages - show cached content immediately, loading spinner only when truly empty */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden" style={getWallpaperStyle(chatId ? getChatWallpaper(chatId) : null)}>
         {messages.length === 0 && isLoading ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff, Sun, Moon } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff, Sun, Moon, Palette, Volume2, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,6 +11,10 @@ import { toast } from "sonner";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
+import { ACCENT_COLORS, getAccentColor, setAccentColor } from "@/lib/profileCustomizationService";
+import { PRESET_SOUNDS, getDefaultSound, setDefaultSound, playSound } from "@/lib/notificationSoundService";
+import { getPresetWallpapers, setDefaultWallpaper, getDefaultWallpaper, getWallpaperStyle, type WallpaperConfig } from "@/lib/chatWallpaperService";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -19,6 +23,11 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const [currentAccent, setCurrentAccent] = useState(getAccentColor().id);
+  const [currentSound, setCurrentSound] = useState(getDefaultSound().id);
+  const [showAccentPicker, setShowAccentPicker] = useState(false);
+  const [showSoundPicker, setShowSoundPicker] = useState(false);
+  const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
 
   const { 
     isSupported: pushSupported, 
@@ -72,26 +81,13 @@ const Settings = () => {
 
   const handleMenuClick = (label: string) => {
     switch(label) {
-      case "My Profile":
-        navigate('/profile');
-        break;
-      case "Wallet":
-        navigate('/wallet');
-        break;
-      case "New Group":
-        navigate('/new-group');
-        break;
-      case "Contacts":
-        navigate('/contacts');
-        break;
-      case "Calls":
-        navigate('/calls');
-        break;
-      case "Saved Messages":
-        navigate('/saved-messages');
-        break;
-      case "Settings":
-        break;
+      case "My Profile": navigate('/profile'); break;
+      case "Wallet": navigate('/wallet'); break;
+      case "New Group": navigate('/new-group'); break;
+      case "Contacts": navigate('/contacts'); break;
+      case "Calls": navigate('/calls'); break;
+      case "Saved Messages": navigate('/saved-messages'); break;
+      case "Settings": break;
       case "Invite Friends":
         navigator.share?.({
           title: 'Join me on Zeshopp Chat',
@@ -99,11 +95,8 @@ const Settings = () => {
           url: window.location.origin
         }) || alert('Share: ' + window.location.origin);
         break;
-      case "Zeshopp Features":
-        navigate('/features');
-        break;
-      default:
-        break;
+      case "Zeshopp Features": navigate('/features'); break;
+      default: break;
     }
   };
 
@@ -119,16 +112,15 @@ const Settings = () => {
     { icon: Star, label: "Zeshopp Features", color: "text-primary" },
   ];
 
+  const wallpapers = getPresetWallpapers();
+  const currentWallpaper = getDefaultWallpaper();
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
         <div className="flex items-center space-x-3">
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={() => navigate("/chats")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate("/chats")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-lg font-semibold">Settings</h1>
@@ -159,19 +151,11 @@ const Settings = () => {
                   {(profile.name || 'U').slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              
               <div className="flex-1 min-w-0">
-                <h4 className="font-semibold text-foreground">
-                  {profile.name || 'User'}
-                </h4>
-                <p className="text-primary text-sm font-medium">
-                  @{profile.username}
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  {profile.email}
-                </p>
+                <h4 className="font-semibold text-foreground">{profile.name || 'User'}</h4>
+                <p className="text-primary text-sm font-medium">@{profile.username}</p>
+                <p className="text-muted-foreground text-xs">{profile.email}</p>
               </div>
-
               <Check className="h-5 w-5 text-primary" />
             </div>
           ) : (
@@ -180,8 +164,11 @@ const Settings = () => {
         </Card>
       </div>
 
-      {/* Theme Toggle */}
-      <div className="px-4 mb-4">
+      {/* Appearance Section */}
+      <div className="px-4 mb-4 space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Appearance</h3>
+        
+        {/* Theme Toggle */}
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -195,17 +182,107 @@ const Settings = () => {
                 <p className="text-xs text-muted-foreground">Toggle app theme</p>
               </div>
             </div>
-            <Switch
-              checked={theme === "dark"}
-              onCheckedChange={toggleTheme}
-            />
+            <Switch checked={theme === "dark"} onCheckedChange={toggleTheme} />
           </div>
         </Card>
+
+        {/* Accent Color */}
+        <Dialog open={showAccentPicker} onOpenChange={setShowAccentPicker}>
+          <DialogTrigger asChild>
+            <Card className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="p-2 rounded-lg bg-muted">
+                    <Palette className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <span className="font-medium text-foreground">Accent Color</span>
+                    <p className="text-xs text-muted-foreground">{getAccentColor().name}</p>
+                  </div>
+                </div>
+                <div 
+                  className="w-6 h-6 rounded-full ring-2 ring-offset-2 ring-offset-background ring-primary" 
+                  style={{ backgroundColor: `hsl(${getAccentColor().hsl})` }}
+                />
+              </div>
+            </Card>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Choose Accent Color</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-4 gap-3 py-4">
+              {ACCENT_COLORS.map((color) => (
+                <button
+                  key={color.id}
+                  onClick={() => {
+                    setAccentColor(color.id);
+                    setCurrentAccent(color.id);
+                    toast.success(`Accent: ${color.name}`);
+                    setShowAccentPicker(false);
+                  }}
+                  className="flex flex-col items-center space-y-2"
+                >
+                  <div
+                    className={`w-12 h-12 rounded-full transition-transform ${
+                      currentAccent === color.id ? "ring-2 ring-foreground ring-offset-2 ring-offset-background scale-110" : "hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: `hsl(${color.hsl})` }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">{color.name}</span>
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Chat Wallpaper */}
+        <Dialog open={showWallpaperPicker} onOpenChange={setShowWallpaperPicker}>
+          <DialogTrigger asChild>
+            <Card className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 rounded-lg bg-muted">
+                  <ImageIcon className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Chat Wallpaper</span>
+                  <p className="text-xs text-muted-foreground">Default chat background</p>
+                </div>
+              </div>
+            </Card>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Chat Wallpaper</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-4 gap-3 py-4">
+              {wallpapers.map((wp, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setDefaultWallpaper(wp);
+                    toast.success("Wallpaper set!");
+                    setShowWallpaperPicker(false);
+                  }}
+                  className={`aspect-[3/4] rounded-lg border-2 transition-transform hover:scale-105 ${
+                    JSON.stringify(currentWallpaper) === JSON.stringify(wp) ? 'border-primary' : 'border-border'
+                  }`}
+                  style={{
+                    ...getWallpaperStyle(wp),
+                    backgroundColor: wp.value === 'transparent' ? 'hsl(var(--background))' : undefined,
+                  }}
+                />
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Notification Settings */}
-      {pushSupported && (
-        <div className="px-4 mb-4">
+      {/* Notifications Section */}
+      <div className="px-4 mb-4 space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Notifications</h3>
+        
+        {pushSupported && (
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
@@ -224,11 +301,53 @@ const Settings = () => {
               />
             </div>
           </Card>
-        </div>
-      )}
+        )}
+
+        {/* Notification Sound */}
+        <Dialog open={showSoundPicker} onOpenChange={setShowSoundPicker}>
+          <DialogTrigger asChild>
+            <Card className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 rounded-lg bg-muted">
+                  <Volume2 className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Notification Sound</span>
+                  <p className="text-xs text-muted-foreground">{getDefaultSound().name}</p>
+                </div>
+              </div>
+            </Card>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Notification Sound</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 py-4">
+              {PRESET_SOUNDS.map((sound) => (
+                <button
+                  key={sound.id}
+                  onClick={() => {
+                    playSound(sound);
+                    setDefaultSound(sound.id);
+                    setCurrentSound(sound.id);
+                    toast.success(`Sound: ${sound.name}`);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
+                    currentSound === sound.id ? 'bg-primary/10 border border-primary' : 'hover:bg-muted'
+                  }`}
+                >
+                  <span className="font-medium text-foreground">{sound.name}</span>
+                  {currentSound === sound.id && <Check className="h-4 w-4 text-primary" />}
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {/* Menu Items */}
       <div className="px-4 space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Menu</h3>
         {menuItems.map((item, index) => (
           <Card 
             key={index}
