@@ -47,6 +47,16 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate method - must be a recognized payment method
+    const validMethods = ['Credit/Debit Card', 'Bank Transfer', 'Mobile Money'];
+    const methodName = method || '';
+    if (!validMethods.includes(methodName)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid payment method.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Use service role for atomic operations
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -95,6 +105,49 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Rate limiting: max 5 deposits per hour per user
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentDeposits } = await supabaseAdmin
+      .from('wallet_transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('wallet_id', wallet.id)
+      .eq('transaction_type', 'deposit')
+      .gte('created_at', oneHourAgo);
+
+    if ((recentDeposits || 0) >= 5) {
+      return new Response(
+        JSON.stringify({ error: 'Too many deposit attempts. Please try again later.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Daily deposit limit: max 50,000 ETB per day
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const { data: dailyDeposits } = await supabaseAdmin
+      .from('wallet_transactions')
+      .select('amount')
+      .eq('wallet_id', wallet.id)
+      .eq('transaction_type', 'deposit')
+      .eq('status', 'completed')
+      .gte('created_at', startOfDay.toISOString());
+
+    const dailyTotal = (dailyDeposits || []).reduce((sum, t) => sum + parseFloat(String(t.amount)), 0);
+    if (dailyTotal + depositAmount > 50000) {
+      return new Response(
+        JSON.stringify({ error: `Daily deposit limit exceeded. You can deposit up to ${(50000 - dailyTotal).toFixed(2)} ETB today.` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Per-transaction limit
+    if (depositAmount > 10000) {
+      return new Response(
+        JSON.stringify({ error: 'Single deposit cannot exceed 10,000 ETB. Please deposit a smaller amount.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get current balance
     const { data: balanceResult } = await supabaseAdmin
       .rpc('get_wallet_balance', { p_wallet_id: wallet.id });
@@ -113,9 +166,9 @@ Deno.serve(async (req) => {
         amount: depositAmount,
         balance_before: currentBalance,
         balance_after: newBalance,
-        description: `Added money via ${method || 'Unknown method'}`,
+        description: `Added money via ${methodName}`,
         metadata: {
-          method: method || 'Unknown',
+          method: methodName,
           timestamp: new Date().toISOString(),
           user_agent: req.headers.get('user-agent'),
         }
@@ -139,7 +192,7 @@ Deno.serve(async (req) => {
           type: 'deposit',
           amount: depositAmount,
           balance_after: newBalance,
-          method: method,
+          method: methodName,
           status: 'completed',
           created_at: transaction.created_at,
         }

@@ -40,6 +40,10 @@ import { DevHealthBanner } from "@/components/dev/DevHealthBanner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { chatStore } from "@/lib/chatStore";
 import { useTheme } from "@/hooks/useTheme";
+import { initAccentColor } from "@/lib/profileCustomizationService";
+
+// Initialize accent color from localStorage on app load
+initAccentColor();
 
 const queryClient = new QueryClient();
 

@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, X, ChevronLeft, ChevronRight, Eye, Trash2 } from "lucide-react";
+import { Plus, X, ChevronLeft, ChevronRight, Eye, Trash2, Image as ImageIcon, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   getActiveStories,
   createTextStory,
+  createImageStory,
   viewStory,
   getMyViewedStories,
   deleteStory,
@@ -15,15 +16,16 @@ import {
   type StoryGroup,
 } from "@/lib/storyService";
 import { supabase } from "@/integrations/supabase/client";
+import { uploadChatImage, compressImage } from "@/lib/supabaseStorage";
 import { toast } from "sonner";
 
 const STORY_COLORS = [
-  "hsl(338, 85%, 55%)", // pink
-  "hsl(260, 80%, 55%)", // purple
-  "hsl(210, 90%, 50%)", // blue
-  "hsl(145, 65%, 42%)", // green
-  "hsl(30, 90%, 55%)",  // orange
-  "hsl(0, 75%, 55%)",   // red
+  "hsl(338, 85%, 55%)",
+  "hsl(260, 80%, 55%)",
+  "hsl(210, 90%, 50%)",
+  "hsl(145, 65%, 42%)",
+  "hsl(30, 90%, 55%)",
+  "hsl(0, 75%, 55%)",
 ];
 
 export function StoriesBar() {
@@ -43,7 +45,6 @@ export function StoriesBar() {
     ]);
     setViewedIds(viewed);
 
-    // Group by user
     const grouped = new Map<string, Story[]>();
     for (const s of stories) {
       const arr = grouped.get(s.user_id) || [];
@@ -51,7 +52,6 @@ export function StoriesBar() {
       grouped.set(s.user_id, arr);
     }
 
-    // Fetch profiles for story owners
     const userIds = Array.from(grouped.keys());
     const profiles = new Map<string, { username: string; name: string; avatar_url: string | null }>();
     
@@ -66,7 +66,6 @@ export function StoriesBar() {
     }
 
     const groups: StoryGroup[] = [];
-    // Put own stories first
     if (grouped.has(userId)) {
       const own = grouped.get(userId)!;
       const p = profiles.get(userId);
@@ -134,18 +133,16 @@ export function StoriesBar() {
     }
   };
 
-  // Auto-advance
   useEffect(() => {
     if (!showViewer) return;
-    const timer = setTimeout(nextStory, 5000);
+    const duration = currentStory?.story_type === 'image' ? 7000 : 5000;
+    const timer = setTimeout(nextStory, duration);
     return () => clearTimeout(timer);
-  }, [showViewer, nextStory]);
+  }, [showViewer, nextStory, currentStory]);
 
   return (
     <>
-      {/* Stories horizontal scroll */}
       <div className="flex items-center space-x-3 px-4 py-3 overflow-x-auto scrollbar-hide border-b border-border">
-        {/* Add story button */}
         <motion.button
           whileTap={{ scale: 0.9 }}
           onClick={() => setShowCreator(true)}
@@ -159,7 +156,6 @@ export function StoriesBar() {
           <span className="text-[10px] text-muted-foreground">Add</span>
         </motion.button>
 
-        {/* Story circles */}
         {storyGroups.map((group, idx) => (
           <motion.button
             key={group.user_id}
@@ -189,7 +185,6 @@ export function StoriesBar() {
         ))}
       </div>
 
-      {/* Story Creator */}
       <AnimatePresence>
         {showCreator && (
           <StoryCreator
@@ -202,7 +197,6 @@ export function StoriesBar() {
         )}
       </AnimatePresence>
 
-      {/* Story Viewer */}
       <AnimatePresence>
         {showViewer && currentStory && currentGroup && (
           <StoryViewer
@@ -227,24 +221,91 @@ export function StoriesBar() {
   );
 }
 
-// ========== Story Creator ==========
+// ========== Story Creator with Photo/Video support ==========
 function StoryCreator({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [mode, setMode] = useState<'text' | 'media'>('text');
   const [text, setText] = useState("");
   const [selectedColor, setSelectedColor] = useState(STORY_COLORS[0]);
   const [posting, setPosting] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [caption, setCaption] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Support images and videos
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      toast.error("Please select an image or video");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("File too large. Max 20MB.");
+      return;
+    }
+
+    setMediaFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setMediaPreview(reader.result as string);
+    reader.readAsDataURL(file);
+    setMode('media');
+  };
 
   const handlePost = async () => {
-    if (!text.trim()) return;
     setPosting(true);
-    const success = await createTextStory(text.trim(), selectedColor);
-    setPosting(false);
-    if (success) {
-      toast.success("Story posted!");
-      onCreated();
-    } else {
+    try {
+      if (mode === 'text') {
+        if (!text.trim()) return;
+        const success = await createTextStory(text.trim(), selectedColor);
+        if (success) {
+          toast.success("Story posted!");
+          onCreated();
+        } else {
+          toast.error("Failed to post story");
+        }
+      } else if (mediaFile) {
+        // Upload to storage
+        let fileToUpload = mediaFile;
+        if (mediaFile.type.startsWith('image/')) {
+          fileToUpload = await compressImage(mediaFile);
+        }
+        
+        const fileName = `story-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const ext = mediaFile.name.split('.').pop() || 'jpg';
+        const path = `stories/${fileName}.${ext}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('chat-media')
+          .upload(path, fileToUpload);
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = await supabase.storage
+          .from('chat-media')
+          .createSignedUrl(path, 86400); // 24h URL
+
+        if (!urlData?.signedUrl) throw new Error('Failed to get URL');
+
+        const success = await createImageStory(urlData.signedUrl, caption || undefined);
+        if (success) {
+          toast.success("Story posted!");
+          onCreated();
+        } else {
+          toast.error("Failed to post story");
+        }
+      }
+    } catch (err) {
+      console.error("Story post error:", err);
       toast.error("Failed to post story");
+    } finally {
+      setPosting(false);
     }
   };
+
+  const canPost = mode === 'text' ? text.trim().length > 0 : !!mediaFile;
 
   return (
     <motion.div
@@ -253,42 +314,110 @@ function StoryCreator({ onClose, onCreated }: { onClose: () => void; onCreated: 
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-background flex flex-col"
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={handleMediaSelect}
+      />
+
       <div className="flex items-center justify-between p-4">
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-5 w-5" />
         </Button>
-        <h2 className="font-semibold">Create Story</h2>
-        <Button onClick={handlePost} disabled={!text.trim() || posting} size="sm">
+        <div className="flex items-center space-x-2">
+          <Button
+            variant={mode === 'text' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => { setMode('text'); setMediaPreview(null); setMediaFile(null); }}
+          >
+            Text
+          </Button>
+          <Button
+            variant={mode === 'media' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Camera className="h-4 w-4 mr-1" />
+            Photo/Video
+          </Button>
+        </div>
+        <Button onClick={handlePost} disabled={!canPost || posting} size="sm">
           {posting ? "Posting..." : "Post"}
         </Button>
       </div>
 
-      <div
-        className="flex-1 flex items-center justify-center p-8 mx-4 rounded-2xl transition-colors"
-        style={{ backgroundColor: selectedColor }}
-      >
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type your story..."
-          className="text-center text-xl font-bold bg-transparent border-none text-white placeholder:text-white/50 focus-visible:ring-0"
-          maxLength={200}
-          autoFocus
-        />
-      </div>
+      {mode === 'text' ? (
+        <>
+          <div
+            className="flex-1 flex items-center justify-center p-8 mx-4 rounded-2xl transition-colors"
+            style={{ backgroundColor: selectedColor }}
+          >
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Type your story..."
+              className="text-center text-xl font-bold bg-transparent border-none text-white placeholder:text-white/50 focus-visible:ring-0"
+              maxLength={200}
+              autoFocus
+            />
+          </div>
 
-      <div className="flex items-center justify-center space-x-3 p-4">
-        {STORY_COLORS.map((color) => (
-          <button
-            key={color}
-            onClick={() => setSelectedColor(color)}
-            className={`w-8 h-8 rounded-full transition-transform ${
-              selectedColor === color ? "ring-2 ring-foreground ring-offset-2 ring-offset-background scale-110" : ""
-            }`}
-            style={{ backgroundColor: color }}
-          />
-        ))}
-      </div>
+          <div className="flex items-center justify-center space-x-3 p-4">
+            {STORY_COLORS.map((color) => (
+              <button
+                key={color}
+                onClick={() => setSelectedColor(color)}
+                className={`w-8 h-8 rounded-full transition-transform ${
+                  selectedColor === color ? "ring-2 ring-foreground ring-offset-2 ring-offset-background scale-110" : ""
+                }`}
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="flex-1 flex flex-col">
+          {mediaPreview ? (
+            <div className="flex-1 flex items-center justify-center bg-black mx-4 rounded-2xl overflow-hidden relative">
+              {mediaFile?.type.startsWith('video/') ? (
+                <video
+                  src={mediaPreview}
+                  className="max-w-full max-h-full object-contain"
+                  controls
+                  autoPlay
+                  muted
+                  loop
+                />
+              ) : (
+                <img
+                  src={mediaPreview}
+                  alt="Preview"
+                  className="max-w-full max-h-full object-contain"
+                />
+              )}
+            </div>
+          ) : (
+            <div
+              className="flex-1 flex flex-col items-center justify-center mx-4 rounded-2xl bg-muted cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Tap to select a photo or video</p>
+            </div>
+          )}
+          <div className="p-4">
+            <Input
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Add a caption..."
+              className="bg-muted border-0 rounded-full"
+              maxLength={200}
+            />
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -332,7 +461,7 @@ function StoryViewer({
               className="h-full bg-white rounded-full"
               initial={{ width: i < storyIndex ? "100%" : "0%" }}
               animate={{ width: i <= storyIndex ? "100%" : "0%" }}
-              transition={i === storyIndex ? { duration: 5, ease: "linear" } : { duration: 0 }}
+              transition={i === storyIndex ? { duration: story.story_type === 'image' ? 7 : 5, ease: "linear" } : { duration: 0 }}
             />
           </div>
         ))}
@@ -372,11 +501,21 @@ function StoryViewer({
           </div>
         ) : (
           <div className="w-full h-full relative">
-            <img
-              src={story.media_url || ""}
-              alt="Story"
-              className="w-full h-full object-contain"
-            />
+            {story.media_url?.includes('.mp4') || story.media_url?.includes('.webm') || story.media_url?.includes('video') ? (
+              <video
+                src={story.media_url || ""}
+                className="w-full h-full object-contain"
+                autoPlay
+                muted
+                playsInline
+              />
+            ) : (
+              <img
+                src={story.media_url || ""}
+                alt="Story"
+                className="w-full h-full object-contain"
+              />
+            )}
             {story.content && (
               <div className="absolute bottom-8 left-0 right-0 px-4">
                 <p className="text-white text-center bg-black/40 rounded-xl px-4 py-2 backdrop-blur-sm">
@@ -387,12 +526,10 @@ function StoryViewer({
           </div>
         )}
 
-        {/* Navigation areas */}
         <button onClick={onPrev} className="absolute left-0 top-0 w-1/3 h-full" />
         <button onClick={onNext} className="absolute right-0 top-0 w-1/3 h-full" />
       </div>
 
-      {/* Footer */}
       {isOwn && (
         <div className="p-4 flex items-center justify-center">
           <div className="flex items-center space-x-1 text-white/60 text-sm">
