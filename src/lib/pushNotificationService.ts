@@ -63,7 +63,7 @@ class PushNotificationService {
 
     try {
       // Check if already subscribed
-      let subscription = await this.registration.pushManager.getSubscription();
+      let subscription = await (this.registration as any).pushManager.getSubscription();
 
       if (!subscription) {
         // Get VAPID key from environment or generate
@@ -75,7 +75,7 @@ class PushNotificationService {
 
         // Subscribe to push
         const applicationServerKey = this.urlBase64ToUint8Array(vapidKey);
-        subscription = await this.registration.pushManager.subscribe({
+        subscription = await (this.registration as any).pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: applicationServerKey as BufferSource,
         });
@@ -121,7 +121,7 @@ class PushNotificationService {
     if (!this.registration) return true;
 
     try {
-      const subscription = await this.registration.pushManager.getSubscription();
+      const subscription = await (this.registration as any).pushManager.getSubscription();
       if (subscription) {
         await subscription.unsubscribe();
         
