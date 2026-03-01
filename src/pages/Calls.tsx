@@ -8,6 +8,7 @@ import { useCall } from "@/contexts/CallContext";
 import { callLogService, CallLogWithProfile } from "@/lib/callLogService";
 import { toast } from "sonner";
 import { getSessionUserSafe } from "@/lib/authSession";
+import { motion } from "framer-motion";
 
 const formatDuration = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
@@ -115,7 +116,7 @@ const Calls = () => {
 
     await startCall(
       peerId, 
-      peerProfile?.name || 'Unknown', 
+      peerProfile?.name || (peerProfile as any)?.username || 'Unknown', 
       log.call_type, 
       peerProfile?.avatar_url || undefined
     );
@@ -125,7 +126,7 @@ const Calls = () => {
     const isOutgoing = log.caller_id === currentUserId;
     const peerProfile = isOutgoing ? log.receiver_profile : log.caller_profile;
     return {
-      name: peerProfile?.name || 'Unknown',
+      name: peerProfile?.name || (peerProfile as any)?.username || 'Unknown',
       avatar: peerProfile?.avatar_url || undefined,
     };
   };
@@ -156,15 +157,27 @@ const Calls = () => {
 
       {/* Empty state */}
       {callLogs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
-          <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex flex-col items-center justify-center py-20 px-8 text-center"
+        >
+          <motion.div
+            animate={{ 
+              scale: [1, 1.08, 1],
+              rotate: [0, 5, -5, 0],
+            }}
+            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6"
+          >
             <Phone className="h-10 w-10 text-muted-foreground" />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">No calls yet</h2>
+          </motion.div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">No calls yet</h2>
           <p className="text-muted-foreground max-w-xs">
             Start a voice or video call with your contacts. Your call history will appear here.
           </p>
-        </div>
+        </motion.div>
       ) : (
         /* Calls List */
         <div className="divide-y divide-border">
@@ -219,6 +232,7 @@ const Calls = () => {
           })}
         </div>
       )}
+      <div className="h-16" />
     </div>
   );
 };

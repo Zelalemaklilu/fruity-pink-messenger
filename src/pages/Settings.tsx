@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff, Sun, Moon, Palette, Volume2, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, User, Wallet, Users, BookOpen, Phone, Bookmark, Settings as SettingsIcon, Share, Star, LogOut, Plus, Check, Loader2, Bell, BellOff, Sun, Moon, Palette, Volume2, Image as ImageIcon, Shield, Database, AtSign, FileDown, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { useNavigate } from "react-router-dom";
@@ -15,6 +16,9 @@ import { ACCENT_COLORS, getAccentColor, setAccentColor } from "@/lib/profileCust
 import { PRESET_SOUNDS, getDefaultSound, setDefaultSound, playSound } from "@/lib/notificationSoundService";
 import { getPresetWallpapers, setDefaultWallpaper, getDefaultWallpaper, getWallpaperStyle, type WallpaperConfig } from "@/lib/chatWallpaperService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import UsernameSettings from "@/components/chat/UsernameSettings";
+import ChatImportDialog from "@/components/chat/ChatImportDialog";
+import { getActiveDeviceCount } from "@/lib/deviceService";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -28,6 +32,8 @@ const Settings = () => {
   const [showAccentPicker, setShowAccentPicker] = useState(false);
   const [showSoundPicker, setShowSoundPicker] = useState(false);
   const [showWallpaperPicker, setShowWallpaperPicker] = useState(false);
+  const [showUsernameDialog, setShowUsernameDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
   const { 
     isSupported: pushSupported, 
@@ -96,6 +102,10 @@ const Settings = () => {
         }) || alert('Share: ' + window.location.origin);
         break;
       case "Zeshopp Features": navigate('/features'); break;
+      case "Active Sessions": navigate('/active-sessions'); break;
+      case "Privacy & Security": navigate('/privacy-settings'); break;
+      case "Notifications": navigate('/notification-settings'); break;
+      case "Data and Storage": navigate('/data-storage'); break;
       default: break;
     }
   };
@@ -103,10 +113,14 @@ const Settings = () => {
   const menuItems = [
     { icon: User, label: "My Profile", color: "text-primary" },
     { icon: Wallet, label: "Wallet", color: "text-green-500" },
+    { icon: Bell, label: "Notifications", color: "text-blue-500" },
+    { icon: Database, label: "Data and Storage", color: "text-teal-500" },
     { icon: Users, label: "New Group", color: "text-blue-500" },
     { icon: BookOpen, label: "Contacts", color: "text-orange-500" },
     { icon: Phone, label: "Calls", color: "text-purple-500" },
     { icon: Bookmark, label: "Saved Messages", color: "text-yellow-500" },
+    { icon: Smartphone, label: "Active Sessions", color: "text-sky-500" },
+    { icon: Shield, label: "Privacy & Security", color: "text-emerald-500" },
     { icon: SettingsIcon, label: "Settings", color: "text-gray-500" },
     { icon: Share, label: "Invite Friends", color: "text-cyan-500" },
     { icon: Star, label: "Zeshopp Features", color: "text-primary" },
@@ -162,7 +176,63 @@ const Settings = () => {
             <p className="text-center text-muted-foreground py-4">Not logged in</p>
           )}
         </Card>
+
+        {/* Username Setting */}
+        <Dialog open={showUsernameDialog} onOpenChange={setShowUsernameDialog}>
+          <DialogTrigger asChild>
+            <Card className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth" data-testid="card-username-setting">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 rounded-lg bg-muted text-purple-500">
+                  <AtSign className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Username</span>
+                  <p className="text-xs text-muted-foreground">Set your unique username</p>
+                </div>
+              </div>
+            </Card>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Username Settings</DialogTitle>
+            </DialogHeader>
+            {user?.id && (
+              <UsernameSettings
+                userId={user.id}
+                onClose={() => setShowUsernameDialog(false)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Export / Import */}
+        <Card
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth"
+          onClick={() => setShowImportDialog(true)}
+          data-testid="card-export-import"
+        >
+          <div className="flex items-center space-x-4">
+            <div className="p-2 rounded-lg bg-muted text-indigo-500">
+              <FileDown className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Import Chat</span>
+              <p className="text-xs text-muted-foreground">Import chat from JSON file</p>
+            </div>
+          </div>
+        </Card>
       </div>
+
+      {showImportDialog && (
+        <ChatImportDialog
+          isOpen={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          chatId=""
+          onImport={() => {
+            setShowImportDialog(false);
+          }}
+        />
+      )}
 
       {/* Appearance Section */}
       <div className="px-4 mb-4 space-y-2">
@@ -354,11 +424,18 @@ const Settings = () => {
             className="p-4 cursor-pointer hover:bg-muted/50 transition-smooth"
             onClick={() => handleMenuClick(item.label)}
           >
-            <div className="flex items-center space-x-4">
-              <div className={`p-2 rounded-lg bg-muted ${item.color}`}>
-                <item.icon className="h-5 w-5" />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center space-x-4">
+                <div className={`p-2 rounded-lg bg-muted ${item.color}`}>
+                  <item.icon className="h-5 w-5" />
+                </div>
+                <span className="font-medium text-foreground">{item.label}</span>
               </div>
-              <span className="font-medium text-foreground">{item.label}</span>
+              {item.label === "Active Sessions" && user?.id && (
+                <Badge variant="secondary" className="text-[10px]" data-testid="badge-device-count">
+                  {getActiveDeviceCount(user.id)}
+                </Badge>
+              )}
             </div>
           </Card>
         ))}
@@ -382,6 +459,7 @@ const Settings = () => {
           </Button>
         </Card>
       </div>
+      <div className="h-16" />
     </div>
   );
 };
