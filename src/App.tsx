@@ -31,7 +31,18 @@ import TransactionReceipt from "./pages/TransactionReceipt";
 import TransactionDetail from "./pages/TransactionDetail";
 import AddAccount from "./pages/AddAccount";
 import ForgotPassword from "./pages/ForgotPassword";
+import ContactProfile from "./pages/ContactProfile";
+import PrivacySettings from "./pages/PrivacySettings";
+import NotificationSettings from "./pages/NotificationSettings";
+import DataStorageSettings from "./pages/DataStorageSettings";
+import Channels from "./pages/Channels";
+import ChannelView from "./pages/ChannelView";
+import Bots from "./pages/Bots";
+import BotChat from "./pages/BotChat";
+import NearbyPeople from "./pages/NearbyPeople";
 import NotFound from "./pages/NotFound";
+import ActiveSessions from "./pages/ActiveSessions";
+import VoiceChatRoom from "./pages/VoiceChatRoom";
 import { updateOnlineStatus } from "@/lib/supabaseService";
 import logoImage from "@/assets/zeshopp-logo.jpg";
 import { CallProvider } from "@/contexts/CallContext";
@@ -41,6 +52,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { chatStore } from "@/lib/chatStore";
 import { useTheme } from "@/hooks/useTheme";
 import { initAccentColor } from "@/lib/profileCustomizationService";
+import { BottomNavigation } from "@/components/BottomNavigation";
 
 // Initialize accent color from localStorage on app load
 initAccentColor();
@@ -158,87 +170,125 @@ const AppRoutes = () => {
     );
   }
 
+  const showBottomNav = isAuthenticated && ["/chats", "/calls", "/channels", "/contacts", "/settings", "/bots", "/nearby"].includes(location.pathname);
+
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={
-          isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><Splash /></PageTransition>
-        } />
-        <Route path="/auth" element={
-          isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><Auth /></PageTransition>
-        } />
-        <Route path="/forgot-password" element={
-          isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><ForgotPassword /></PageTransition>
-        } />
-        <Route path="/chats" element={
-          isAuthenticated ? <PageTransition><Chats /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/chat" element={
-          isAuthenticated ? <Navigate to="/chats" replace /> : <Navigate to="/" replace />
-        } />
-        <Route path="/chat/:chatId" element={
-          isAuthenticated ? <PageTransition><Chat /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/profile" element={
-          isAuthenticated ? <PageTransition><Profile /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/settings" element={
-          isAuthenticated ? <PageTransition><Settings /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/contacts" element={
-          isAuthenticated ? <PageTransition><Contacts /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/calls" element={
-          isAuthenticated ? <PageTransition><Calls /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/saved-messages" element={
-          isAuthenticated ? <PageTransition><SavedMessages /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/new-group" element={
-          isAuthenticated ? <PageTransition><NewGroup /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/group/:groupId" element={
-          isAuthenticated ? <PageTransition><GroupChat /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/group/:groupId/add-members" element={
-          isAuthenticated ? <PageTransition><AddGroupMembers /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/new-message" element={
-          isAuthenticated ? <PageTransition><NewMessage /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/new-contact" element={
-          isAuthenticated ? <PageTransition><NewContact /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/wallet" element={
-          isAuthenticated ? <PageTransition><Wallet /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/features" element={
-          isAuthenticated ? <PageTransition><Features /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/add-money" element={
-          isAuthenticated ? <PageTransition><AddMoney /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/send-money" element={
-          isAuthenticated ? <PageTransition><SendMoney /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/request-money" element={
-          isAuthenticated ? <PageTransition><RequestMoney /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/transaction-history" element={
-          isAuthenticated ? <PageTransition><TransactionHistory /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/transaction-receipt" element={
-          isAuthenticated ? <PageTransition><TransactionReceipt /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/transaction-detail/:transactionId" element={
-          isAuthenticated ? <PageTransition><TransactionDetail /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="/add-account" element={
-          isAuthenticated ? <PageTransition><AddAccount /></PageTransition> : <Navigate to="/auth" replace />
-        } />
-        <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
-      </Routes>
-    </AnimatePresence>
+    <>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={
+            isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><Splash /></PageTransition>
+          } />
+          <Route path="/auth" element={
+            isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><Auth /></PageTransition>
+          } />
+          <Route path="/forgot-password" element={
+            isAuthenticated ? <Navigate to="/chats" replace /> : <PageTransition><ForgotPassword /></PageTransition>
+          } />
+          <Route path="/chats" element={
+            isAuthenticated ? <PageTransition><Chats /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/chat" element={
+            isAuthenticated ? <Navigate to="/chats" replace /> : <Navigate to="/" replace />
+          } />
+          <Route path="/chat/:chatId" element={
+            isAuthenticated ? <PageTransition><Chat /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/profile" element={
+            isAuthenticated ? <PageTransition><Profile /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/settings" element={
+            isAuthenticated ? <PageTransition><Settings /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/contacts" element={
+            isAuthenticated ? <PageTransition><Contacts /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/calls" element={
+            isAuthenticated ? <PageTransition><Calls /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/saved-messages" element={
+            isAuthenticated ? <PageTransition><SavedMessages /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/new-group" element={
+            isAuthenticated ? <PageTransition><NewGroup /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/group/:groupId" element={
+            isAuthenticated ? <PageTransition><GroupChat /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/group/:groupId/add-members" element={
+            isAuthenticated ? <PageTransition><AddGroupMembers /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/contact/:userId" element={
+            isAuthenticated ? <PageTransition><ContactProfile /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/privacy-settings" element={
+            isAuthenticated ? <PageTransition><PrivacySettings /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/notification-settings" element={
+            isAuthenticated ? <PageTransition><NotificationSettings /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/data-storage" element={
+            isAuthenticated ? <PageTransition><DataStorageSettings /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/new-message" element={
+            isAuthenticated ? <PageTransition><NewMessage /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/new-contact" element={
+            isAuthenticated ? <PageTransition><NewContact /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/wallet" element={
+            isAuthenticated ? <PageTransition><Wallet /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/features" element={
+            isAuthenticated ? <PageTransition><Features /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/add-money" element={
+            isAuthenticated ? <PageTransition><AddMoney /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/send-money" element={
+            isAuthenticated ? <PageTransition><SendMoney /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/request-money" element={
+            isAuthenticated ? <PageTransition><RequestMoney /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/transaction-history" element={
+            isAuthenticated ? <PageTransition><TransactionHistory /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/transaction-receipt" element={
+            isAuthenticated ? <PageTransition><TransactionReceipt /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/transaction-detail/:transactionId" element={
+            isAuthenticated ? <PageTransition><TransactionDetail /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/add-account" element={
+            isAuthenticated ? <PageTransition><AddAccount /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/channels" element={
+            isAuthenticated ? <PageTransition><Channels /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/channel/:id" element={
+            isAuthenticated ? <PageTransition><ChannelView /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/bots" element={
+            isAuthenticated ? <PageTransition><Bots /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/bot/:id" element={
+            isAuthenticated ? <PageTransition><BotChat /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/nearby" element={
+            isAuthenticated ? <PageTransition><NearbyPeople /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/active-sessions" element={
+            isAuthenticated ? <PageTransition><ActiveSessions /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/voice-chat/:id" element={
+            isAuthenticated ? <PageTransition><VoiceChatRoom /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
+        </Routes>
+      </AnimatePresence>
+      {showBottomNav && <BottomNavigation />}
+    </>
   );
 };
 

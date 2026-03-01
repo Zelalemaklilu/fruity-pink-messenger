@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Search, Plus, UserPlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Search, Plus, UserPlus, Loader2, Users, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChatAvatar } from "@/components/ui/chat-avatar";
@@ -8,6 +8,8 @@ import { useChatList, useProfile } from "@/hooks/useChatStore";
 import { chatStore, Chat, PublicProfile } from "@/lib/chatStore";
 import { searchUsers, findOrCreateChat } from "@/lib/supabaseService";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import { formatLastSeen } from "@/lib/formatLastSeen";
 
 // Contact item that loads profile data
 interface ContactItemProps {
@@ -30,8 +32,11 @@ const ContactItem = ({ userId, onClick }: ContactItemProps) => {
     );
   }
   
+  const lastSeenText = formatLastSeen(profile.last_seen, profile.is_online);
+
   return (
     <div
+      data-testid={`contact-item-${userId}`}
       onClick={() => onClick(userId)}
       className="flex items-center space-x-3 p-4 hover:bg-muted/50 cursor-pointer transition-smooth"
     >
@@ -49,6 +54,11 @@ const ContactItem = ({ userId, onClick }: ContactItemProps) => {
         <p className="text-sm text-muted-foreground truncate">
           @{profile.username}
         </p>
+        {lastSeenText && (
+          <p className={`text-[11px] ${profile.is_online ? 'text-green-500' : 'text-muted-foreground'}`}>
+            {lastSeenText}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -207,13 +217,24 @@ const Contacts = () => {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : contactIds.length === 0 ? (
-            <div className="text-center py-12 px-4">
-              <UserPlus className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">No contacts yet</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Search for users by username to start chatting
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-20 px-8 text-center"
+            >
+              <motion.div
+                animate={{ scale: [1, 1.08, 1] }}
+                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6"
+              >
+                <Users className="h-10 w-10 text-muted-foreground" />
+              </motion.div>
+              <h2 className="text-xl font-semibold text-foreground mb-2">No contacts yet</h2>
+              <p className="text-muted-foreground max-w-xs">
+                Search for users by username to start chatting. Your contacts will appear here.
               </p>
-            </div>
+            </motion.div>
           ) : (
             <div className="divide-y divide-border">
               {contactIds.map((userId) => (
@@ -228,16 +249,7 @@ const Contacts = () => {
         </>
       )}
 
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6">
-        <Button
-          size="icon"
-          onClick={() => navigate('/new-message')}
-          className="h-14 w-14 rounded-full bg-gradient-primary hover:opacity-90 transition-smooth shadow-primary"
-        >
-          <Plus className="h-6 w-6" />
-        </Button>
-      </div>
+      <div className="h-16" />
     </div>
   );
 };
