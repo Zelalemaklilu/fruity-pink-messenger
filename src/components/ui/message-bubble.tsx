@@ -32,9 +32,16 @@ interface MessageBubbleProps {
   mediaUrl?: string;
   fileName?: string;
   onDelete?: () => void;
+  onReply?: () => void;
+  onEdit?: () => void;
+  onForward?: () => void;
+  onPin?: () => void;
+  isPinned?: boolean;
   className?: string;
   messageId?: string;
   chatId?: string;
+  bubbleColor?: string;
+  fontSize?: "small" | "medium" | "large";
 }
 
 export function MessageBubble({ 
@@ -46,9 +53,16 @@ export function MessageBubble({
   mediaUrl,
   fileName,
   onDelete,
+  onReply,
+  onEdit,
+  onForward,
+  onPin,
+  isPinned,
   className,
   messageId,
   chatId,
+  bubbleColor,
+  fontSize,
 }: MessageBubbleProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
