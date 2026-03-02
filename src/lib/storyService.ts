@@ -5,11 +5,21 @@ export interface Story {
   user_id: string;
   content: string | null;
   media_url: string | null;
-  story_type: "text" | "image";
+  story_type: "text" | "image" | "video";
+  media_type?: "image" | "video";
   background_color: string;
   views_count: number;
+  duration?: number;
   created_at: string;
   expires_at: string;
+}
+
+export interface StoryViewerInfo {
+  viewer_id: string;
+  viewed_at: string;
+  username?: string;
+  name?: string;
+  avatar_url?: string | null;
 }
 
 export interface StoryGroup {
@@ -107,4 +117,75 @@ export async function deleteStory(storyId: string): Promise<boolean> {
     return false;
   }
   return true;
+}
+
+export async function uploadStoryMedia(file: File): Promise<{ url: string; type: "image" | "video" }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const isVideo = file.type.startsWith("video/");
+  const ext = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg");
+  const filePath = `stories/${user.id}/${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("chat-media")
+    .upload(filePath, file, { upsert: true });
+
+  if (error) throw new Error("Upload failed: " + error.message);
+
+  const { data: urlData } = supabase.storage
+    .from("chat-media")
+    .getPublicUrl(filePath);
+
+  return { url: urlData.publicUrl, type: isVideo ? "video" : "image" };
+}
+
+export async function createMediaStory(mediaUrl: string, mediaType: "image" | "video", caption?: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { error } = await supabase
+    .from("user_stories")
+    .insert({
+      user_id: user.id,
+      media_url: mediaUrl,
+      content: caption || null,
+      story_type: mediaType === "video" ? "video" : "image",
+    } as any);
+
+  if (error) {
+    console.error("Error creating media story:", error);
+    return false;
+  }
+  return true;
+}
+
+export async function getStoryViewers(storyId: string): Promise<StoryViewerInfo[]> {
+  const { data, error } = await supabase
+    .from("story_views")
+    .select("viewer_id, viewed_at")
+    .eq("story_id", storyId);
+
+  if (error || !data) return [];
+
+  const viewerIds = data.map(v => v.viewer_id);
+  if (viewerIds.length === 0) return [];
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, username, name, avatar_url")
+    .in("id", viewerIds);
+
+  const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+  return data.map(v => {
+    const p = profileMap.get(v.viewer_id);
+    return {
+      viewer_id: v.viewer_id,
+      viewed_at: v.viewed_at,
+      username: p?.username,
+      name: p?.name || p?.username,
+      avatar_url: p?.avatar_url,
+    };
+  });
 }
