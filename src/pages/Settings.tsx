@@ -16,8 +16,8 @@ import { ACCENT_COLORS, getAccentColor, setAccentColor } from "@/lib/profileCust
 import { PRESET_SOUNDS, getDefaultSound, setDefaultSound, playSound } from "@/lib/notificationSoundService";
 import { getPresetWallpapers, setDefaultWallpaper, getDefaultWallpaper, getWallpaperStyle, type WallpaperConfig } from "@/lib/chatWallpaperService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import UsernameSettings from "@/components/chat/UsernameSettings";
-import ChatImportDialog from "@/components/chat/ChatImportDialog";
+import { UsernameSettings } from "@/components/chat/UsernameSettings";
+import { ChatImportDialog } from "@/components/chat/ChatImportDialog";
 import { getActiveDeviceCount } from "@/lib/deviceService";
 
 const Settings = () => {

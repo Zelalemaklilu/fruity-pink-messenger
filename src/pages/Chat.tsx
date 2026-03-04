@@ -15,8 +15,8 @@ import { CallButton } from "@/components/call/CallButton";
 import TypingDots from "@/components/chat/TypingDots";
 import { VoiceRecorder } from "@/components/chat/VoiceRecorder";
 import { MediaGallery } from "@/components/chat/MediaGallery";
-import ForwardPicker from "@/components/chat/ForwardPicker";
-import MediaViewer from "@/components/chat/MediaViewer";
+import { ForwardPicker } from "@/components/chat/ForwardPicker";
+import { MediaViewer } from "@/components/chat/MediaViewer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,17 +51,17 @@ import { isSilentMode, toggleSilentMode } from "@/lib/silentMessageService";
 import { isSecretChat, enableSecretChat, disableSecretChat, getSecretChat, SELF_DESTRUCT_OPTIONS } from "@/lib/secretChatService";
 import { getChatTheme } from "@/lib/chatThemeService";
 import ChatThemePicker from "@/components/chat/ChatThemePicker";
-import PollCreator from "@/components/chat/PollCreator";
-import PollCard from "@/components/chat/PollCard";
+import { PollCreator } from "@/components/chat/PollCreator";
+import { PollCard } from "@/components/chat/PollCard";
 import { getPollsForChat, votePoll, closePoll, type Poll } from "@/lib/pollService";
 import { getCurrentLocation, type LocationData } from "@/lib/locationService";
 import LocationCard from "@/components/chat/LocationCard";
-import VideoMessageRecorder from "@/components/chat/VideoMessageRecorder";
-import StickerGifPicker from "@/components/chat/StickerGifPicker";
+import { VideoMessageRecorder } from "@/components/chat/VideoMessageRecorder";
+import { StickerGifPicker } from "@/components/chat/StickerGifPicker";
 import type { Sticker } from "@/lib/stickerService";
 import { Smile } from "lucide-react";
 import { cn } from "@/lib/utils";
-import ChatExportDialog from "@/components/chat/ChatExportDialog";
+import { ChatExportDialog } from "@/components/chat/ChatExportDialog";
 
 // =============================================
 // TYPES
