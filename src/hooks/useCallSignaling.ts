@@ -46,18 +46,11 @@ export const useCallSignaling = (userId: string | null) => {
     return `call_${sorted[0]}_${sorted[1]}_${Date.now()}`;
   }, []);
 
-  // Subscribe to signaling channel
-  const subscribeToSignaling = useCallback((callbacks: SignalingCallbacks) => {
-    if (!userId) return;
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    callbacksRef.current = callbacks;
-
-    // Clean up existing channel
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
-
-    const channel = supabase.channel(`calls:${userId}`, {
+  // Create and subscribe to signaling channel
+  const createChannel = useCallback((uid: string) => {
+    const channel = supabase.channel(`calls:${uid}`, {
       config: { broadcast: { self: false } }
     });
 
@@ -80,10 +73,36 @@ export const useCallSignaling = (userId: string | null) => {
       })
       .subscribe((status) => {
         console.log('[Signaling] Channel status:', status);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Auto-reconnect after a short delay
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            console.log('[Signaling] Reconnecting...');
+            if (channelRef.current) {
+              supabase.removeChannel(channelRef.current);
+              channelRef.current = null;
+            }
+            channelRef.current = createChannel(uid);
+          }, 2000);
+        }
       });
 
-    channelRef.current = channel;
-  }, [userId]);
+    return channel;
+  }, []);
+
+  // Subscribe to signaling channel
+  const subscribeToSignaling = useCallback((callbacks: SignalingCallbacks) => {
+    if (!userId) return;
+
+    callbacksRef.current = callbacks;
+
+    // Clean up existing channel
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    channelRef.current = createChannel(userId);
+  }, [userId, createChannel]);
 
   // Send call offer to receiver
   const sendOffer = useCallback(async (
@@ -214,6 +233,10 @@ export const useCallSignaling = (userId: string | null) => {
 
   // Cleanup
   const cleanup = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;

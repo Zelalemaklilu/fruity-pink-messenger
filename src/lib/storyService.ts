@@ -133,11 +133,16 @@ export async function uploadStoryMedia(file: File): Promise<{ url: string; type:
 
   if (error) throw new Error("Upload failed: " + error.message);
 
-  const { data: urlData } = supabase.storage
+  // Use signed URL since bucket is private (48h expiry to cover story lifetime)
+  const { data: urlData, error: urlError } = await supabase.storage
     .from("chat-media")
-    .getPublicUrl(filePath);
+    .createSignedUrl(filePath, 172800);
 
-  return { url: urlData.publicUrl, type: isVideo ? "video" : "image" };
+  if (urlError || !urlData) {
+    throw new Error("Failed to create signed URL: " + (urlError?.message || "unknown"));
+  }
+
+  return { url: urlData.signedUrl, type: isVideo ? "video" : "image" };
 }
 
 export async function createMediaStory(mediaUrl: string, mediaType: "image" | "video", caption?: string): Promise<boolean> {
