@@ -5,6 +5,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
+import { shouldSendReadReceipts, shouldShowTyping } from '@/lib/ghostModeService';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -288,9 +289,9 @@ class ChatStore {
   // MESSAGES
   // =============================================
 
-  async loadMessages(chatId: string, forceRefresh = false): Promise<Message[]> {
-    // Return cached if available and not forcing refresh
-    if (!forceRefresh && this.messages.has(chatId)) {
+  async loadMessages(chatId: string, forceRefresh = false, limit = 50, offset = 0): Promise<Message[]> {
+    // Return cached if available and not forcing refresh and not paginating
+    if (!forceRefresh && offset === 0 && this.messages.has(chatId)) {
       return this.messages.get(chatId)!;
     }
 
@@ -299,14 +300,14 @@ class ChatStore {
 
     for (let attempt = 1; attempt <= MAX_ABORT_RETRIES; attempt++) {
       try {
-        const { data, error } = await supabase
+        const { data, error, count } = await supabase
           .from('messages')
-          .select('*')
+          .select('*', { count: 'exact' })
           .eq('chat_id', chatId)
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1);
 
         if (error) {
-          // Retry AbortError a few times (often happens during auth client init/lock)
           if (isAbortError(error)) {
             if (attempt < MAX_ABORT_RETRIES) {
               await sleep(200 * attempt);
@@ -314,21 +315,30 @@ class ChatStore {
             }
             return cachedFallback();
           }
-
           console.error('[ChatStore] Error loading messages:', error);
           return cachedFallback();
         }
 
-        const messages: Message[] = (data || []).map((msg) => ({
-          ...msg,
-          message_type: msg.message_type as Message['message_type'],
-          status: msg.status as Message['status'],
-        }));
+        const messages: Message[] = (data || [])
+          .reverse() // Reverse to get ascending order
+          .map((msg) => ({
+            ...msg,
+            message_type: msg.message_type as Message['message_type'],
+            status: msg.status as Message['status'],
+          }));
 
-        this.messages.set(chatId, messages);
+        if (offset > 0) {
+          // Prepend older messages to existing cache
+          const existing = this.messages.get(chatId) || [];
+          const merged = [...messages, ...existing.filter(m => !messages.find(n => n.id === m.id))];
+          this.messages.set(chatId, merged);
+        } else {
+          this.messages.set(chatId, messages);
+        }
+        
         this.lastSyncTimes.messages = new Date();
         this.notifyMessageListeners(chatId);
-        return messages;
+        return this.messages.get(chatId) || messages;
       } catch (err: any) {
         if (isAbortError(err)) {
           if (attempt < MAX_ABORT_RETRIES) {
@@ -676,6 +686,9 @@ class ChatStore {
     const channel = this.presenceChannels.get(chatId);
     if (!channel || !this.currentUserId) return;
     
+    // Ghost mode: don't show typing
+    if (isTyping && !shouldShowTyping()) return;
+    
     // Debounce typing state
     const timeoutKey = `typing-${chatId}`;
     const existingTimeout = this.typingTimeouts.get(timeoutKey);
@@ -713,6 +726,9 @@ class ChatStore {
     const chat = this.chats.get(chatId);
     if (!chat) return;
     
+    // Ghost mode: don't send read receipts to server
+    const ghostActive = !shouldSendReadReceipts();
+    
     // Update local cache immediately
     const unreadField = chat.participant_1 === this.currentUserId ? 'unread_count_1' : 'unread_count_2';
     if (chat.participant_1 === this.currentUserId) {
@@ -737,23 +753,24 @@ class ChatStore {
       this.notifyMessageListeners(chatId);
     }
     
-    // Sync with server (ignore AbortErrors)
-    try {
-      await supabase
-        .from('chats')
-        .update({ [unreadField]: 0 })
-        .eq('id', chatId);
-      
-      await supabase
-        .from('messages')
-        .update({ status: 'read' })
-        .eq('chat_id', chatId)
-        .eq('receiver_id', this.currentUserId)
-        .neq('status', 'read');
-    } catch (err: any) {
-      // Silently ignore AbortError
-      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return;
-      console.error('[ChatStore] Error marking as read:', err);
+    // Sync with server (ignore AbortErrors) — skip if ghost mode
+    if (!ghostActive) {
+      try {
+        await supabase
+          .from('chats')
+          .update({ [unreadField]: 0 })
+          .eq('id', chatId);
+        
+        await supabase
+          .from('messages')
+          .update({ status: 'read' })
+          .eq('chat_id', chatId)
+          .eq('receiver_id', this.currentUserId)
+          .neq('status', 'read');
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || err?.message?.includes('aborted')) return;
+        console.error('[ChatStore] Error marking as read:', err);
+      }
     }
   }
 

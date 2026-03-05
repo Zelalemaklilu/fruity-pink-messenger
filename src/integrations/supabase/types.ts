@@ -114,6 +114,82 @@ export type Database = {
           },
         ]
       }
+      group_bans: {
+        Row: {
+          banned_at: string
+          banned_by: string
+          group_id: string
+          id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          banned_at?: string
+          banned_by: string
+          group_id: string
+          id?: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          banned_at?: string
+          banned_by?: string
+          group_id?: string
+          id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_bans_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_events: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          event_date: string
+          group_id: string
+          id: string
+          reminder_sent: boolean | null
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          event_date: string
+          group_id: string
+          id?: string
+          reminder_sent?: boolean | null
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          event_date?: string
+          group_id?: string
+          id?: string
+          reminder_sent?: boolean | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_events_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_members: {
         Row: {
           group_id: string
@@ -714,6 +790,10 @@ export type Database = {
         Args: { p_group_id: string; p_user_id?: string }
         Returns: boolean
       }
+      is_group_moderator: {
+        Args: { p_group_id: string; p_user_id?: string }
+        Returns: boolean
+      }
       search_users_public: {
         Args: { search_term: string }
         Returns: {
@@ -729,7 +809,7 @@ export type Database = {
       }
     }
     Enums: {
-      group_role: "admin" | "member"
+      group_role: "admin" | "member" | "moderator"
       wallet_status: "active" | "suspended" | "pending_activation"
       wallet_transaction_status: "pending" | "completed" | "failed" | "reversed"
       wallet_transaction_type:
@@ -865,7 +945,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      group_role: ["admin", "member"],
+      group_role: ["admin", "member", "moderator"],
       wallet_status: ["active", "suspended", "pending_activation"],
       wallet_transaction_status: ["pending", "completed", "failed", "reversed"],
       wallet_transaction_type: [

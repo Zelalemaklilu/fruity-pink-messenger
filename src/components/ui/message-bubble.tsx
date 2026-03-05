@@ -32,6 +32,7 @@ interface MessageBubbleProps {
   mediaUrl?: string;
   fileName?: string;
   onDelete?: () => void;
+  onDeleteForEveryone?: () => void;
   onReply?: () => void;
   onEdit?: () => void;
   onForward?: () => void;
@@ -42,6 +43,7 @@ interface MessageBubbleProps {
   isPinned?: boolean;
   bubbleColor?: string;
   fontSize?: "small" | "medium" | "large";
+  isViewOnce?: boolean;
 }
 
 export function MessageBubble({
@@ -53,6 +55,7 @@ export function MessageBubble({
   mediaUrl,
   fileName,
   onDelete,
+  onDeleteForEveryone,
   onReply,
   onEdit,
   onForward,
@@ -63,6 +66,7 @@ export function MessageBubble({
   isPinned,
   bubbleColor,
   fontSize = "medium",
+  isViewOnce,
 }: MessageBubbleProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -502,7 +506,20 @@ export function MessageBubble({
                     data-testid="context-delete"
                   >
                     <Trash2 className="h-4 w-4" />
-                    Delete
+                    Delete for Me
+                  </button>
+                )}
+                {onDeleteForEveryone && isOwn && (
+                  <button
+                    onClick={() => {
+                      setShowContextMenu(false);
+                      onDeleteForEveryone();
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-destructive hover:bg-muted transition-colors"
+                    data-testid="context-delete-everyone"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete for Everyone
                   </button>
                 )}
               </div>

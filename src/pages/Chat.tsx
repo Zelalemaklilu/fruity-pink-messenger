@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search, Mic, Images, Video, VolumeX, Volume2, ImageIcon, Trash2, BellOff, Bell, X, Pin, Timer, CheckSquare, Square, Clock, Lock, Palette, BarChart3, MapPin, Download } from "lucide-react";
+import { ArrowLeft, MoreVertical, Paperclip, Send, Image, File, Loader2, Search, Mic, Images, Video, VolumeX, Volume2, ImageIcon, Trash2, BellOff, Bell, X, Pin, Timer, CheckSquare, Square, Clock, Lock, Palette, BarChart3, MapPin, Download, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -59,9 +59,13 @@ import LocationCard from "@/components/chat/LocationCard";
 import { VideoMessageRecorder } from "@/components/chat/VideoMessageRecorder";
 import { StickerGifPicker } from "@/components/chat/StickerGifPicker";
 import type { Sticker } from "@/lib/stickerService";
-import { Smile } from "lucide-react";
+import { Smile, Ghost, Eye, EyeOff, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatExportDialog } from "@/components/chat/ChatExportDialog";
+import { registerUndoSend, undoSend, hasPendingUndo, subscribeToUndoChanges } from "@/lib/undoSendService";
+import { isGhostModeActive } from "@/lib/ghostModeService";
+import { isChatLocked, verifyChatPin, markChatUnlocked, isChatSessionUnlocked } from "@/lib/chatLockService";
+import { isViewOnce, hasBeenViewed, markAsViewed, markAsViewOnce, isViewOnceExpired } from "@/lib/viewOnceService";
 // sync
 // =============================================
 // TYPES
@@ -127,6 +131,11 @@ const Chat = () => {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [chatThemeBubble, setChatThemeBubble] = useState<string>("");
   const [chatThemeFontSize, setChatThemeFontSize] = useState<"small" | "medium" | "large">("medium");
+  const [ghostMode, setGhostModeState] = useState(isGhostModeActive());
+  const [pendingUndoId, setPendingUndoId] = useState<string | null>(null);
+  const [chatLockPin, setChatLockPin] = useState("");
+  const [showLockScreen, setShowLockScreen] = useState(false);
+  const [viewOnceMode, setViewOnceMode] = useState(false);
   const navigate = useNavigate();
   const { chatId } = useParams();
   const virtuosoRef = useRef<any>(null);
@@ -138,6 +147,23 @@ const Chat = () => {
   const { startCall } = useCall();
 
   const currentUserId = chatStore.getCurrentUserId();
+
+  // Chat lock check
+  useEffect(() => {
+    if (chatId && isChatLocked(chatId) && !isChatSessionUnlocked(chatId)) {
+      setShowLockScreen(true);
+    }
+  }, [chatId]);
+
+  // Undo send subscription
+  useEffect(() => {
+    const unsub = subscribeToUndoChanges(() => {
+      if (chatId) {
+        setPendingUndoId(hasPendingUndo(chatId));
+      }
+    });
+    return unsub;
+  }, [chatId]);
 
   useEffect(() => {
     if (chatId) {
@@ -158,6 +184,7 @@ const Chat = () => {
       const theme = getChatTheme(chatId);
       setChatThemeBubble(theme?.bubbleColor || "");
       setChatThemeFontSize(theme?.fontSize || "medium");
+      setGhostModeState(isGhostModeActive());
     }
   }, [chatId]);
 
@@ -301,8 +328,19 @@ const Chat = () => {
     const success = await sendMessage(messageText);
     if (!success) {
       toast.error("Failed to send message");
+    } else if (chatId) {
+      // Register undo for text messages (5-second window)
+      const latestMessages = rawMessages;
+      const lastMsg = latestMessages[latestMessages.length - 1];
+      if (lastMsg) {
+        registerUndoSend(lastMsg.id, chatId, async () => {
+          await deleteMessage(lastMsg.id);
+          toast.success("Message unsent");
+        });
+        setPendingUndoId(lastMsg.id);
+      }
     }
-  }, [newMessage, sendMessage, setTyping, editingMessage, chatId]);
+  }, [newMessage, sendMessage, setTyping, editingMessage, chatId, rawMessages, deleteMessage]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -697,6 +735,60 @@ const Chat = () => {
     );
   }
 
+  // Chat lock screen
+  if (showLockScreen && chatId) {
+    return (
+      <div className="h-screen bg-background flex flex-col items-center justify-center p-8">
+        <Lock className="h-16 w-16 text-primary mb-6" />
+        <h2 className="text-xl font-bold text-foreground mb-2">Chat Locked</h2>
+        <p className="text-sm text-muted-foreground mb-6 text-center">Enter PIN to access this chat</p>
+        <div className="flex gap-2 mb-4">
+          {[0,1,2,3].map(i => (
+            <div key={i} className={cn(
+              "w-4 h-4 rounded-full border-2 border-primary transition-all",
+              chatLockPin.length > i ? "bg-primary" : "bg-transparent"
+            )} />
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-w-[240px]">
+          {[1,2,3,4,5,6,7,8,9,null,0,'del'].map((key, i) => {
+            if (key === null) return <div key={i} />;
+            return (
+              <Button
+                key={i}
+                variant="outline"
+                className="h-14 w-14 text-lg font-semibold rounded-xl"
+                onClick={() => {
+                  if (key === 'del') {
+                    setChatLockPin(p => p.slice(0, -1));
+                  } else {
+                    const newPin = chatLockPin + key.toString();
+                    setChatLockPin(newPin);
+                    if (newPin.length === 4) {
+                      if (verifyChatPin(chatId, newPin)) {
+                        markChatUnlocked(chatId);
+                        setShowLockScreen(false);
+                        setChatLockPin("");
+                      } else {
+                        toast.error("Wrong PIN");
+                        setChatLockPin("");
+                      }
+                    }
+                  }
+                }}
+              >
+                {key === 'del' ? '⌫' : key}
+              </Button>
+            );
+          })}
+        </div>
+        <Button variant="ghost" className="mt-6" onClick={() => navigate("/chats")}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
@@ -789,6 +881,31 @@ const Chat = () => {
                 <Lock className="h-4 w-4 mr-2" />
                 {isSecret ? "Disable Secret Chat" : "Enable Secret Chat"}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  if (!chatId) return;
+                  if (isChatLocked(chatId)) {
+                    import("@/lib/chatLockService").then(({ unlockChat }) => {
+                      unlockChat(chatId);
+                      toast.success("Chat lock removed");
+                    });
+                  } else {
+                    const pin = prompt("Set a 4-digit PIN:");
+                    if (pin && pin.length === 4 && /^\d{4}$/.test(pin)) {
+                      import("@/lib/chatLockService").then(({ lockChat }) => {
+                        lockChat(chatId, pin);
+                        toast.success("Chat locked with PIN");
+                      });
+                    } else if (pin) {
+                      toast.error("PIN must be exactly 4 digits");
+                    }
+                  }
+                }}
+                data-testid="menu-lock-chat"
+              >
+                <KeyRound className="h-4 w-4 mr-2" />
+                {chatId && isChatLocked(chatId) ? "Remove Chat Lock" : "Lock Chat"}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => { setSelectMode(!selectMode); setSelectedMessages(new Set()); }} data-testid="menu-select">
                 <CheckSquare className="h-4 w-4 mr-2" />
                 {selectMode ? "Cancel Selection" : "Select Messages"}
@@ -861,12 +978,18 @@ const Chat = () => {
       )}
 
       {/* Chat status indicators - combined into single bar */}
-      {(disappearingTimer !== "off" || isSecret || silentMode) && (
+      {(disappearingTimer !== "off" || isSecret || silentMode || ghostMode) && (
         <div className="flex-shrink-0 flex items-center justify-center gap-3 px-4 py-1 bg-muted/50 border-b border-border flex-wrap">
           {isSecret && (
             <div className="flex items-center gap-1">
               <Lock className="h-3 w-3 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Encrypted</span>
+            </div>
+          )}
+          {ghostMode && (
+            <div className="flex items-center gap-1">
+              <Ghost className="h-3 w-3 text-primary" />
+              <span className="text-xs text-primary font-medium">Ghost Mode</span>
             </div>
           )}
           {disappearingTimer !== "off" && (
@@ -883,6 +1006,38 @@ const Chat = () => {
           )}
         </div>
       )}
+
+      {/* Undo send banner */}
+      <AnimatePresence>
+        {pendingUndoId && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="flex-shrink-0 overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-4 py-2 bg-primary/10 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Undo2 className="h-4 w-4 text-primary" />
+                <span className="text-xs text-primary font-medium">Message sent</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary h-7 px-3 text-xs font-semibold"
+                onClick={() => {
+                  if (pendingUndoId) {
+                    undoSend(pendingUndoId);
+                    setPendingUndoId(null);
+                  }
+                }}
+              >
+                UNDO
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Search Bar */}
       {showSearch && chatId && (
@@ -992,6 +1147,7 @@ const Chat = () => {
                     mediaUrl={message.mediaUrl}
                     fileName={message.fileName}
                     onDelete={!selectMode && message.isOwn && !message.isOptimistic ? () => handleDeleteMessage(message.id) : undefined}
+                    onDeleteForEveryone={!selectMode && message.isOwn && !message.isOptimistic ? () => handleDeleteMessage(message.id) : undefined}
                     onReply={!selectMode && !message.isOptimistic ? () => handleReplyToMessage(message) : undefined}
                     onEdit={!selectMode && message.isOwn && !message.isOptimistic && message.type === "text" ? () => handleEditMessage(message) : undefined}
                     onForward={!selectMode && !message.isOptimistic ? () => handleForwardMessage(message) : undefined}

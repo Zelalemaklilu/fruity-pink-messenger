@@ -1,14 +1,18 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Eye, EyeOff, Lock, UserX, Users, Phone, Forward, Shield } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Lock, UserX, Users, Phone, Forward, Shield, Ghost, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { getPrivacySettings, updatePrivacySettings, type PrivacySettings as PrivacySettingsType } from "@/lib/privacyService";
 import { getBlockedUsers, unblockUser } from "@/lib/blockService";
+import { getGhostMode, setGhostMode, type GhostModeSettings } from "@/lib/ghostModeService";
+import { isAppLockEnabled, setAppLock, removeAppLock, verifyAppPin } from "@/lib/chatLockService";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -25,6 +29,12 @@ const PrivacySettings = () => {
   const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
   const [loadingBlocked, setLoadingBlocked] = useState(true);
   const [unblockTarget, setUnblockTarget] = useState<BlockedProfile | null>(null);
+  const [ghostSettings, setGhostSettings] = useState<GhostModeSettings>(getGhostMode());
+  const [appLockEnabled, setAppLockEnabled] = useState(isAppLockEnabled());
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinStep, setPinStep] = useState<"enter" | "confirm">("enter");
 
   useEffect(() => {
     loadBlockedProfiles();
@@ -54,6 +64,14 @@ const PrivacySettings = () => {
     toast.success("Privacy settings updated");
   };
 
+  const handleGhostUpdate = (updates: Partial<GhostModeSettings>) => {
+    const updated = setGhostMode(updates);
+    setGhostSettings(updated);
+    toast.success(updates.enabled !== undefined 
+      ? (updates.enabled ? "Ghost Mode enabled" : "Ghost Mode disabled")
+      : "Ghost Mode updated");
+  };
+
   const handleUnblock = (profile: BlockedProfile) => {
     unblockUser(profile.id);
     setBlockedProfiles((prev) => prev.filter((p) => p.id !== profile.id));
@@ -61,18 +79,139 @@ const PrivacySettings = () => {
     toast.success(`${profile.name || profile.username} unblocked`);
   };
 
+  const handleSetAppLock = () => {
+    if (pinStep === "enter") {
+      if (pinInput.length < 4) {
+        toast.error("PIN must be at least 4 digits");
+        return;
+      }
+      setPinStep("confirm");
+      setPinConfirm("");
+    } else {
+      if (pinInput !== pinConfirm) {
+        toast.error("PINs don't match");
+        setPinConfirm("");
+        setPinStep("enter");
+        setPinInput("");
+        return;
+      }
+      setAppLock(pinInput);
+      setAppLockEnabled(true);
+      setShowPinDialog(false);
+      setPinInput("");
+      setPinConfirm("");
+      setPinStep("enter");
+      toast.success("App lock enabled");
+    }
+  };
+
+  const handleRemoveAppLock = () => {
+    removeAppLock();
+    setAppLockEnabled(false);
+    toast.success("App lock removed");
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border p-4">
         <div className="flex items-center space-x-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} data-testid="button-back-privacy">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-lg font-semibold">Privacy & Security</h1>
         </div>
       </div>
 
+      {/* Ghost Mode Section */}
       <div className="px-4 pt-4 mb-4 space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Ghost Mode</h3>
+
+        <Card className="p-4 border-primary/20">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-4">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <Ghost className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="font-medium text-foreground">Ghost Mode</span>
+                <p className="text-xs text-muted-foreground">Read messages invisibly</p>
+              </div>
+            </div>
+            <Switch
+              checked={ghostSettings.enabled}
+              onCheckedChange={(val) => handleGhostUpdate({ enabled: val })}
+            />
+          </div>
+        </Card>
+
+        {ghostSettings.enabled && (
+          <div className="space-y-2 pl-2">
+            <Card className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">Hide Read Receipts</span>
+                </div>
+                <Switch
+                  checked={ghostSettings.hideReadReceipts}
+                  onCheckedChange={(val) => handleGhostUpdate({ hideReadReceipts: val })}
+                />
+              </div>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">Hide Typing Indicator</span>
+                </div>
+                <Switch
+                  checked={ghostSettings.hideTyping}
+                  onCheckedChange={(val) => handleGhostUpdate({ hideTyping: val })}
+                />
+              </div>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">Hide Online Status</span>
+                </div>
+                <Switch
+                  checked={ghostSettings.hideOnlineStatus}
+                  onCheckedChange={(val) => handleGhostUpdate({ hideOnlineStatus: val })}
+                />
+              </div>
+            </Card>
+          </div>
+        )}
+      </div>
+
+      {/* App Lock Section */}
+      <div className="px-4 mb-4 space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">App Lock</h3>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-4">
+              <div className="p-2 rounded-lg bg-muted text-primary">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="font-medium text-foreground">PIN Lock</span>
+                <p className="text-xs text-muted-foreground">Lock chats with a PIN code</p>
+              </div>
+            </div>
+            {appLockEnabled ? (
+              <Button variant="outline" size="sm" onClick={handleRemoveAppLock}>Remove</Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => { setShowPinDialog(true); setPinStep("enter"); setPinInput(""); }}>Set PIN</Button>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Privacy Controls */}
+      <div className="px-4 mb-4 space-y-2">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Privacy Controls</h3>
 
         <Card className="p-4">
@@ -90,7 +229,7 @@ const PrivacySettings = () => {
               value={settings.lastSeenVisibility}
               onValueChange={(val) => handleUpdate({ lastSeenVisibility: val as "everyone" | "contacts" | "nobody" })}
             >
-              <SelectTrigger className="w-[130px]" data-testid="select-last-seen">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -116,7 +255,6 @@ const PrivacySettings = () => {
             <Switch
               checked={settings.readReceipts}
               onCheckedChange={(val) => handleUpdate({ readReceipts: val })}
-              data-testid="switch-read-receipts"
             />
           </div>
         </Card>
@@ -135,7 +273,6 @@ const PrivacySettings = () => {
             <Switch
               checked={settings.onlineStatus}
               onCheckedChange={(val) => handleUpdate({ onlineStatus: val })}
-              data-testid="switch-online-status"
             />
           </div>
         </Card>
@@ -155,7 +292,7 @@ const PrivacySettings = () => {
               value={settings.profilePhotoVisibility}
               onValueChange={(val) => handleUpdate({ profilePhotoVisibility: val as "everyone" | "contacts" | "nobody" })}
             >
-              <SelectTrigger className="w-[130px]" data-testid="select-profile-photo">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -181,7 +318,6 @@ const PrivacySettings = () => {
             <Switch
               checked={settings.forwardedMessages}
               onCheckedChange={(val) => handleUpdate({ forwardedMessages: val })}
-              data-testid="switch-forwarded-messages"
             />
           </div>
         </Card>
@@ -201,7 +337,7 @@ const PrivacySettings = () => {
               value={settings.phoneNumberVisibility}
               onValueChange={(val) => handleUpdate({ phoneNumberVisibility: val as "everyone" | "contacts" | "nobody" })}
             >
-              <SelectTrigger className="w-[130px]" data-testid="select-phone-number">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -228,7 +364,7 @@ const PrivacySettings = () => {
               value={settings.groupsAddPermission}
               onValueChange={(val) => handleUpdate({ groupsAddPermission: val as "everyone" | "contacts" })}
             >
-              <SelectTrigger className="w-[130px]" data-testid="select-groups">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -240,6 +376,7 @@ const PrivacySettings = () => {
         </Card>
       </div>
 
+      {/* Blocked Users */}
       <div className="px-4 mb-4 space-y-2">
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">Blocked Users</h3>
 
@@ -251,12 +388,12 @@ const PrivacySettings = () => {
           <Card className="p-6">
             <div className="flex flex-col items-center gap-2">
               <UserX className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground" data-testid="text-no-blocked-users">No blocked users</p>
+              <p className="text-sm text-muted-foreground">No blocked users</p>
             </div>
           </Card>
         ) : (
           blockedProfiles.map((profile) => (
-            <Card key={profile.id} className="p-4" data-testid={`card-blocked-user-${profile.id}`}>
+            <Card key={profile.id} className="p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center space-x-3 min-w-0">
                   <Avatar className="h-10 w-10 flex-shrink-0">
@@ -277,7 +414,6 @@ const PrivacySettings = () => {
                   size="sm"
                   className="text-destructive border-destructive/30 flex-shrink-0"
                   onClick={() => setUnblockTarget(profile)}
-                  data-testid={`button-unblock-${profile.id}`}
                 >
                   Unblock
                 </Button>
@@ -289,25 +425,53 @@ const PrivacySettings = () => {
 
       <div className="h-16" />
 
+      {/* Unblock Dialog */}
       <AlertDialog open={!!unblockTarget} onOpenChange={(open) => !open && setUnblockTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Unblock User</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to unblock {unblockTarget?.name || unblockTarget?.username}? They will be able to message you again.
+              Are you sure you want to unblock {unblockTarget?.name || unblockTarget?.username}?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-unblock">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => unblockTarget && handleUnblock(unblockTarget)}
-              data-testid="button-confirm-unblock"
-            >
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => unblockTarget && handleUnblock(unblockTarget)}>
               Unblock
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* PIN Setup Dialog */}
+      <Dialog open={showPinDialog} onOpenChange={(open) => { if (!open) { setShowPinDialog(false); setPinInput(""); setPinConfirm(""); setPinStep("enter"); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{pinStep === "enter" ? "Set PIN" : "Confirm PIN"}</DialogTitle>
+            <DialogDescription>
+              {pinStep === "enter" ? "Enter a 4-digit PIN to lock your chats" : "Re-enter your PIN to confirm"}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="Enter 4-digit PIN"
+            value={pinStep === "enter" ? pinInput : pinConfirm}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+              pinStep === "enter" ? setPinInput(val) : setPinConfirm(val);
+            }}
+            className="text-center text-2xl tracking-[1em] font-mono"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPinDialog(false)}>Cancel</Button>
+            <Button onClick={handleSetAppLock}>
+              {pinStep === "enter" ? "Next" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
