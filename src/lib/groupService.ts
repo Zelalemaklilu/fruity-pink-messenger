@@ -20,7 +20,7 @@ export interface GroupMember {
   id: string;
   group_id: string;
   user_id: string;
-  role: 'admin' | 'member';
+  role: 'admin' | 'moderator' | 'member';
   joined_at: string;
 }
 
