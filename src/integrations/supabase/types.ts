@@ -114,6 +114,204 @@ export type Database = {
           },
         ]
       }
+      etok_comments: {
+        Row: {
+          author_id: string
+          created_at: string
+          id: string
+          is_pinned: boolean
+          likes: number
+          parent_id: string | null
+          text: string
+          video_id: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          likes?: number
+          parent_id?: string | null
+          text: string
+          video_id: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          id?: string
+          is_pinned?: boolean
+          likes?: number
+          parent_id?: string | null
+          text?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etok_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "etok_comments_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "etok_comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "etok_comments_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "etok_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      etok_follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etok_follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "etok_follows_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      etok_likes: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etok_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "etok_likes_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "etok_videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      etok_videos: {
+        Row: {
+          allow_comments: boolean
+          allow_download: boolean
+          allow_duet: boolean
+          allow_stitch: boolean
+          author_id: string
+          comments: number
+          created_at: string
+          description: string
+          duration: number
+          hashtags: string[]
+          id: string
+          is_sponsored: boolean
+          likes: number
+          privacy: string
+          shares: number
+          sound_name: string
+          thumbnail_url: string | null
+          video_url: string
+          views: number
+        }
+        Insert: {
+          allow_comments?: boolean
+          allow_download?: boolean
+          allow_duet?: boolean
+          allow_stitch?: boolean
+          author_id: string
+          comments?: number
+          created_at?: string
+          description?: string
+          duration?: number
+          hashtags?: string[]
+          id?: string
+          is_sponsored?: boolean
+          likes?: number
+          privacy?: string
+          shares?: number
+          sound_name?: string
+          thumbnail_url?: string | null
+          video_url: string
+          views?: number
+        }
+        Update: {
+          allow_comments?: boolean
+          allow_download?: boolean
+          allow_duet?: boolean
+          allow_stitch?: boolean
+          author_id?: string
+          comments?: number
+          created_at?: string
+          description?: string
+          duration?: number
+          hashtags?: string[]
+          id?: string
+          is_sponsored?: boolean
+          likes?: number
+          privacy?: string
+          shares?: number
+          sound_name?: string
+          thumbnail_url?: string | null
+          video_url?: string
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etok_videos_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_bans: {
         Row: {
           banned_at: string
