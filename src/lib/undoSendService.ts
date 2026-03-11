@@ -6,7 +6,7 @@
 type UndoEntry = {
   messageId: string;
   chatId: string;
-  timer: NodeJS.Timeout;
+  timer: ReturnType<typeof setTimeout>;
   onUndo: () => void;
 };
 

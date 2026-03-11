@@ -25,7 +25,7 @@ export const MessageSearch = ({ chatId, onResultSelect, onClose }: MessageSearch
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Focus input on mount
   useEffect(() => {

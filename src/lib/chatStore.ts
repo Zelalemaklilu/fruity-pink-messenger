@@ -94,7 +94,7 @@ class ChatStore {
   private currentUserId: string | null = null;
   
   // Typing state
-  private typingTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private typingTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private localTypingState: Map<string, boolean> = new Map();
 
   // Sync timestamps (for dev health banner)

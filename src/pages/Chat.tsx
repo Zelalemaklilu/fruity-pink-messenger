@@ -141,7 +141,7 @@ const Chat = () => {
   const virtuosoRef = useRef<any>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrolledRef = useRef(false);
 
   const { startCall } = useCall();

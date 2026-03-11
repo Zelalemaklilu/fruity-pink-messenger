@@ -28,7 +28,7 @@ export function StickerGifPicker({ isOpen, onClose, onSelectSticker }: StickerGi
   const [recentStickers, setRecentStickers] = useState<Sticker[]>([]);
   const [favoriteStickers, setFavoriteStickers] = useState<Sticker[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const packs = getAllPacks();
 
   useEffect(() => {
