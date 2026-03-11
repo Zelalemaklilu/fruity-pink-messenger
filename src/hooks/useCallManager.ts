@@ -42,8 +42,8 @@ export const useCallManager = ({ userId, userName, userAvatar }: UseCallManagerP
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([]);
   const pendingOfferRef = useRef<CallOffer | null>(null);
 
