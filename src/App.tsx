@@ -285,6 +285,9 @@ const AppRoutes = () => {
           <Route path="/voice-chat/:id" element={
             isAuthenticated ? <PageTransition><VoiceChatRoom /></PageTransition> : <Navigate to="/auth" replace />
           } />
+          <Route path="/shop" element={
+            isAuthenticated ? <PageTransition><Shop /></PageTransition> : <Navigate to="/auth" replace />
+          } />
           <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
         </Routes>
       </AnimatePresence>
