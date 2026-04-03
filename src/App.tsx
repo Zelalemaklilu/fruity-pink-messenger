@@ -171,7 +171,7 @@ const AppRoutes = () => {
     );
   }
 
-  const showBottomNav = isAuthenticated && ["/chats", "/calls", "/channels", "/contacts", "/settings", "/bots", "/nearby"].includes(location.pathname);
+  const showBottomNav = isAuthenticated && ["/chats", "/calls", "/channels", "/contacts", "/settings", "/bots", "/nearby", "/shop"].includes(location.pathname);
 
   return (
     <>
