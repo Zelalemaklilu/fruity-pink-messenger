@@ -595,6 +595,7 @@ const Chats = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <NavigationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       {/* Header */}
       <motion.div
         initial={{ y: -20, opacity: 0 }}
