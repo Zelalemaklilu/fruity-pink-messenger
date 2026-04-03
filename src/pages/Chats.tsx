@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import NavigationDrawer from "@/components/chat/NavigationDrawer";
 import { Search, MoreVertical, Plus, Loader2, Users, Pin, PinOff, Filter, Check, CheckCheck, Camera, Mic, FileIcon, MessageCircle, ArrowLeft, Archive, FolderOpen, Star, Briefcase, Heart, Hash, Trash2, Pencil, FolderInput } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
