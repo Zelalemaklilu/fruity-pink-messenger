@@ -41,6 +41,7 @@ import Bots from "./pages/Bots";
 import BotChat from "./pages/BotChat";
 import NearbyPeople from "./pages/NearbyPeople";
 import NotFound from "./pages/NotFound";
+import Shop from "./pages/Shop";
 import ActiveSessions from "./pages/ActiveSessions";
 import VoiceChatRoom from "./pages/VoiceChatRoom";
 import { updateOnlineStatus } from "@/lib/supabaseService";
