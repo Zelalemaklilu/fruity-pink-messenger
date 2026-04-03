@@ -41,6 +41,7 @@ import Bots from "./pages/Bots";
 import BotChat from "./pages/BotChat";
 import NearbyPeople from "./pages/NearbyPeople";
 import NotFound from "./pages/NotFound";
+import Shop from "./pages/Shop";
 import ActiveSessions from "./pages/ActiveSessions";
 import VoiceChatRoom from "./pages/VoiceChatRoom";
 import { updateOnlineStatus } from "@/lib/supabaseService";
@@ -170,7 +171,7 @@ const AppRoutes = () => {
     );
   }
 
-  const showBottomNav = isAuthenticated && ["/chats", "/calls", "/channels", "/contacts", "/settings", "/bots", "/nearby"].includes(location.pathname);
+  const showBottomNav = isAuthenticated && ["/chats", "/calls", "/channels", "/contacts", "/settings", "/bots", "/nearby", "/shop"].includes(location.pathname);
 
   return (
     <>
@@ -283,6 +284,9 @@ const AppRoutes = () => {
           } />
           <Route path="/voice-chat/:id" element={
             isAuthenticated ? <PageTransition><VoiceChatRoom /></PageTransition> : <Navigate to="/auth" replace />
+          } />
+          <Route path="/shop" element={
+            isAuthenticated ? <PageTransition><Shop /></PageTransition> : <Navigate to="/auth" replace />
           } />
           <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
         </Routes>

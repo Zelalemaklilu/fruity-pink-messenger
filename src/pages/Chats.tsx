@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import NavigationDrawer from "@/components/chat/NavigationDrawer";
 import { Search, MoreVertical, Plus, Loader2, Users, Pin, PinOff, Filter, Check, CheckCheck, Camera, Mic, FileIcon, MessageCircle, ArrowLeft, Archive, FolderOpen, Star, Briefcase, Heart, Hash, Trash2, Pencil, FolderInput } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -321,6 +322,7 @@ const filterLabels: Record<ChatFilter, string> = {
 };
 
 const Chats = () => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [groups, setGroups] = useState<GroupWithLastMessage[]>([]);
@@ -593,6 +595,7 @@ const Chats = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <NavigationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       {/* Header */}
       <motion.div
         initial={{ y: -20, opacity: 0 }}
@@ -603,7 +606,7 @@ const Chats = () => {
         <div className="flex items-center space-x-4">
           <motion.div
             whileTap={{ scale: 0.9 }}
-            onClick={() => navigate('/profile')}
+            onClick={() => setDrawerOpen(true)}
             className="cursor-pointer relative"
           >
             <ChatAvatar 
