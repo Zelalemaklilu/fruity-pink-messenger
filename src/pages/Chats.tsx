@@ -322,6 +322,7 @@ const filterLabels: Record<ChatFilter, string> = {
 };
 
 const Chats = () => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [groups, setGroups] = useState<GroupWithLastMessage[]>([]);
