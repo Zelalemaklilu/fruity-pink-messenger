@@ -606,7 +606,7 @@ const Chats = () => {
         <div className="flex items-center space-x-4">
           <motion.div
             whileTap={{ scale: 0.9 }}
-            onClick={() => navigate('/profile')}
+            onClick={() => setDrawerOpen(true)}
             className="cursor-pointer relative"
           >
             <ChatAvatar 
